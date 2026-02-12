@@ -588,9 +588,15 @@ const POS = () => {
                   onClick={() => addToCart(product)}
                   className={cn("glass-card rounded-xl p-3 text-left hover:glow-cyan transition-all group", isBelowCost && 'ring-1 ring-destructive/40')}
                 >
-                  <div className={cn("w-full aspect-[4/3] rounded-lg flex flex-col items-center justify-center mb-2 relative border", catColor.bg, catColor.border)}>
-                    <Package className={cn("w-6 h-6 transition-colors", catColor.icon, "group-hover:text-primary")} />
-                    <span className={cn("text-[8px] font-medium mt-1 uppercase tracking-wider", catColor.icon)}>{product.category}</span>
+                  <div className={cn("w-full aspect-[4/3] rounded-lg flex flex-col items-center justify-center mb-2 relative border overflow-hidden", catColor.bg, catColor.border)}>
+                    {product.image_url ? (
+                      <img src={product.image_url} alt={product.name} className="w-full h-full object-cover absolute inset-0" />
+                    ) : (
+                      <>
+                        <Package className={cn("w-6 h-6 transition-colors", catColor.icon, "group-hover:text-primary")} />
+                        <span className={cn("text-[8px] font-medium mt-1 uppercase tracking-wider", catColor.icon)}>{product.category}</span>
+                      </>
+                    )}
                     {product.is_weighted && (
                       <span className="absolute bottom-1 right-1 text-[8px] px-1.5 py-0.5 rounded bg-info/20 text-info font-bold flex items-center gap-0.5">
                         <Scale className="w-2.5 h-2.5" /> KG
