@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Plus, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen, MessageCircle } from 'lucide-react';
 import { useCustomers } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -88,6 +88,16 @@ const Customers = () => {
                       debtLevel === 'red' ? 'debt-gauge-red' : debtLevel === 'yellow' ? 'debt-gauge-yellow' : 'debt-gauge-green'
                     )} style={{ width: `${Math.min((debt / 300) * 100, 100)}%` }} />
                   </div>
+                  {customer.phone && (
+                    <a
+                      href={`https://wa.me/${customer.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${customer.name}, this is a friendly reminder from BHAEES. Your outstanding balance is OMR ${debt.toFixed(3)}. Please settle at your earliest convenience. Thank you!`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg bg-success/15 text-success text-xs font-medium hover:bg-success/25 transition-colors"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" /> Send WhatsApp Reminder
+                    </a>
+                  )}
                 </div>
               )}
 

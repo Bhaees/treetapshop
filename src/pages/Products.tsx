@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from 'react';
-import { Search, Plus, Edit, Trash2, Package, Download, Upload, Loader2, ImagePlus, Sparkles } from 'lucide-react';
+import { useState, useRef, useCallback, useMemo } from 'react';
+import { Search, Plus, Edit, Trash2, Package, Download, Upload, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import { useProducts, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -137,6 +137,23 @@ const Products = () => {
   const lowStock = productsList.filter(p => p.stock <= p.min_stock).length;
   const totalValue = productsList.reduce((sum, p) => sum + (p.price * p.stock), 0);
 
+  // Expiry Watch: products expiring within 7 days
+  const now = new Date();
+  const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const nearExpiryProducts = useMemo(() => {
+    return productsList.filter(p => {
+      if (!p.expiry_date) return false;
+      const exp = new Date(p.expiry_date);
+      return exp <= sevenDaysFromNow && exp >= now;
+    });
+  }, [productsList]);
+  const expiredProducts = useMemo(() => {
+    return productsList.filter(p => {
+      if (!p.expiry_date) return false;
+      return new Date(p.expiry_date) < now;
+    });
+  }, [productsList]);
+
   if (isLoading) {
     return <div className="flex items-center justify-center h-64"><p className="text-sm text-muted-foreground">Loading inventory...</p></div>;
   }
@@ -148,7 +165,11 @@ const Products = () => {
           <h1 className="text-2xl font-bold font-heading text-foreground">
             <span className="text-primary text-glow">Inventory</span>
           </h1>
-          <p className="text-sm text-muted-foreground">{productsList.length} products · {lowStock} low stock · Value: OMR {totalValue.toFixed(3)}</p>
+          <p className="text-sm text-muted-foreground">
+            {productsList.length} products · {lowStock} low stock · Value: OMR {totalValue.toFixed(3)}
+            {nearExpiryProducts.length > 0 && <span className="text-warning ml-2">⚠ {nearExpiryProducts.length} expiring soon</span>}
+            {expiredProducts.length > 0 && <span className="text-destructive ml-2">🚫 {expiredProducts.length} expired</span>}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -219,8 +240,15 @@ const Products = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, 200).map(product => (
-                <tr key={product.id} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
+              {filtered.slice(0, 200).map(product => {
+                const isNearExpiry = product.expiry_date && new Date(product.expiry_date) <= sevenDaysFromNow && new Date(product.expiry_date) >= now;
+                const isExpired = product.expiry_date && new Date(product.expiry_date) < now;
+                return (
+                <tr key={product.id} className={cn(
+                  "border-b border-border/30 hover:bg-muted/10 transition-colors",
+                  isExpired && "ring-2 ring-inset ring-destructive/40 bg-destructive/5",
+                  isNearExpiry && !isExpired && "ring-2 ring-inset ring-warning/40 bg-warning/5"
+                )}>
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-muted/20">
@@ -235,6 +263,16 @@ const Products = () => {
                       <div>
                         <span className="font-medium text-foreground">{product.name}</span>
                         {product.name_ar && <p className="text-[10px] text-muted-foreground" dir="rtl">{product.name_ar}</p>}
+                        {isExpired && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-destructive font-bold mt-0.5">
+                            <AlertTriangle className="w-3 h-3" /> EXPIRED {product.expiry_date}
+                          </span>
+                        )}
+                        {isNearExpiry && !isExpired && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-warning font-bold mt-0.5">
+                            <AlertTriangle className="w-3 h-3" /> Expires {product.expiry_date}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -261,7 +299,8 @@ const Products = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>

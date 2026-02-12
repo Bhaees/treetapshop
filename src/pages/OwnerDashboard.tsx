@@ -3,22 +3,34 @@ import { motion } from 'framer-motion';
 import { 
   DollarSign, ShoppingCart, Users, TrendingUp, Lock, Unlock, 
   Activity, Eye, EyeOff, LogOut, Wifi, WifiOff, 
-  AlertTriangle, Smartphone, BarChart3, Bell, ShieldAlert
+  AlertTriangle, Smartphone, BarChart3, Bell, ShieldAlert,
+  Percent, Banknote, CheckCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import StatCard from '@/components/dashboard/StatCard';
-import { useTransactions, useCustomers, useStaffAlerts } from '@/hooks/useSupabaseData';
+import { useTransactions, useCustomers, useStaffAlerts, useProducts } from '@/hooks/useSupabaseData';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+
+const CASH_THRESHOLD_DEFAULT = 200; // OMR
 
 const OwnerDashboard = () => {
   const { data: transactions = [] } = useTransactions();
   const { data: customers = [] } = useCustomers();
   const { data: staffAlerts = [] } = useStaffAlerts();
+  const { data: products = [] } = useProducts();
+  const queryClient = useQueryClient();
   const unreadAlerts = staffAlerts.filter(a => !a.is_read);
 
   const [isVaultLocked, setIsVaultLocked] = useState(true);
   const [pin, setPin] = useState('');
   const [isOnline, setIsOnline] = useState(true);
   const [showVaultData, setShowVaultData] = useState(false);
+  const [cashThreshold, setCashThreshold] = useState(CASH_THRESHOLD_DEFAULT);
+  const [cashAlertSent, setCashAlertSent] = useState(false);
+  const [quickDiscountPercent, setQuickDiscountPercent] = useState(0);
+  const [applyingDiscount, setApplyingDiscount] = useState(false);
 
   // Derived stats from live DB
   const totalSales = useMemo(() => transactions.reduce((s, t) => s + Number(t.total), 0), [transactions]);
@@ -28,6 +40,77 @@ const OwnerDashboard = () => {
   const creditSales = useMemo(() => transactions.filter(t => t.payment_type === 'credit').reduce((s, t) => s + Number(t.total), 0), [transactions]);
   const digitalSales = useMemo(() => transactions.filter(t => t.payment_type === 'digital').reduce((s, t) => s + Number(t.total), 0), [transactions]);
   const refundTotal = useMemo(() => transactions.filter(t => t.status === 'refunded').reduce((s, t) => s + Number(t.total), 0), [transactions]);
+
+  // Today's cash sales for drawer tracker
+  const todayCashSales = useMemo(() => {
+    const today = new Date().toDateString();
+    return transactions
+      .filter(t => t.payment_type === 'cash' && new Date(t.created_at).toDateString() === today)
+      .reduce((s, t) => s + Number(t.total), 0);
+  }, [transactions]);
+
+  // Cash threshold alert
+  useEffect(() => {
+    if (todayCashSales >= cashThreshold && !cashAlertSent) {
+      setCashAlertSent(true);
+      toast.warning(`⚠️ Cash in drawer has reached OMR ${todayCashSales.toFixed(2)} — exceeds threshold of OMR ${cashThreshold}`, {
+        duration: 10000,
+        description: 'Consider clearing the register.',
+      });
+      // Log alert
+      supabase.from('staff_alerts').insert({
+        staff_name: 'System',
+        action: 'cash_threshold_reached',
+        details: `Cash in drawer reached OMR ${todayCashSales.toFixed(2)} (threshold: OMR ${cashThreshold})`,
+      }).then(() => {});
+    }
+  }, [todayCashSales, cashThreshold, cashAlertSent]);
+
+  // Near-expiry products
+  const nearExpiryProducts = useMemo(() => {
+    const now = new Date();
+    const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return products.filter(p => {
+      if (!p.expiry_date) return false;
+      const exp = new Date(p.expiry_date);
+      return exp <= sevenDays && exp >= now;
+    });
+  }, [products]);
+
+  // Register clearance handler
+  const handleRegisterClearance = async () => {
+    const amount = todayCashSales;
+    await supabase.from('staff_alerts').insert({
+      staff_name: 'Owner',
+      action: 'register_clearance',
+      details: `Cleared OMR ${amount.toFixed(2)} from cash drawer`,
+    });
+    setCashAlertSent(false);
+    toast.success(`✅ Register cleared — OMR ${amount.toFixed(2)} logged`, { duration: 3000 });
+    queryClient.invalidateQueries({ queryKey: ['staff_alerts'] });
+  };
+
+  // Quick discount for near-expiry items
+  const applyQuickDiscount = async () => {
+    if (nearExpiryProducts.length === 0) {
+      toast.info('No near-expiry products to discount');
+      return;
+    }
+    if (quickDiscountPercent <= 0 || quickDiscountPercent > 90) {
+      toast.error('Enter a discount between 1-90%');
+      return;
+    }
+    setApplyingDiscount(true);
+    let updated = 0;
+    for (const product of nearExpiryProducts) {
+      const newPrice = Math.round(product.price * (1 - quickDiscountPercent / 100) * 1000) / 1000;
+      const { error } = await supabase.from('products').update({ price: newPrice }).eq('id', product.id);
+      if (!error) updated++;
+    }
+    toast.success(`Applied ${quickDiscountPercent}% discount to ${updated} near-expiry products`);
+    queryClient.invalidateQueries({ queryKey: ['products'] });
+    setApplyingDiscount(false);
+  };
 
   // Live feed from recent transactions
   const liveFeed = useMemo(() => {
@@ -75,6 +158,96 @@ const OwnerDashboard = () => {
         <StatCard title="Market Debt" value={`OMR ${totalDebt.toFixed(2)}`} change="total khat" changeType="negative" icon={Users} iconColor="bg-destructive" />
         <StatCard title="Refunds" value={`OMR ${refundTotal.toFixed(2)}`} change="total" changeType="negative" icon={TrendingUp} iconColor="bg-warning" />
       </div>
+
+      {/* Cash-in-Drawer Tracker */}
+      <div className="glass-card rounded-xl p-4 glow-cyan">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold font-heading text-foreground flex items-center gap-2">
+            <Banknote className="w-4 h-4 text-success" />
+            Cash-in-Drawer Tracker
+          </h3>
+          <span className={cn(
+            "text-[10px] px-2 py-1 rounded-full font-medium",
+            todayCashSales >= cashThreshold ? 'bg-destructive/20 text-destructive animate-pulse' : 'bg-success/20 text-success'
+          )}>
+            {todayCashSales >= cashThreshold ? '⚠ THRESHOLD REACHED' : '● NORMAL'}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="glass rounded-lg p-3 text-center">
+            <p className="text-[10px] text-muted-foreground mb-1">Today's Cash</p>
+            <p className={cn("text-lg font-bold font-heading", todayCashSales >= cashThreshold ? 'text-destructive' : 'text-success')}>
+              OMR {todayCashSales.toFixed(2)}
+            </p>
+          </div>
+          <div className="glass rounded-lg p-3 text-center">
+            <p className="text-[10px] text-muted-foreground mb-1">Threshold</p>
+            <div className="flex items-center justify-center gap-1">
+              <span className="text-xs text-muted-foreground">OMR</span>
+              <input
+                type="number"
+                value={cashThreshold}
+                onChange={(e) => setCashThreshold(Number(e.target.value))}
+                className="w-16 text-center text-lg font-bold font-heading text-warning bg-transparent focus:outline-none"
+                min={50}
+                max={10000}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="w-full h-2 rounded-full bg-muted overflow-hidden mb-3">
+          <div
+            className={cn("h-full rounded-full transition-all", todayCashSales >= cashThreshold ? 'bg-destructive' : 'bg-success')}
+            style={{ width: `${Math.min((todayCashSales / cashThreshold) * 100, 100)}%` }}
+          />
+        </div>
+        <button
+          onClick={handleRegisterClearance}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-warning/15 text-warning text-xs font-medium hover:bg-warning/25 transition-colors"
+        >
+          <CheckCircle className="w-4 h-4" /> Register Clearance — Log Cash Removal
+        </button>
+      </div>
+
+      {/* Expiry Watch + Quick Discount */}
+      {nearExpiryProducts.length > 0 && (
+        <div className="glass-card rounded-xl p-4 ring-1 ring-warning/30">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold font-heading text-foreground flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-warning" />
+              Expiry Watch — {nearExpiryProducts.length} items
+            </h3>
+          </div>
+          <div className="space-y-2 max-h-[150px] overflow-y-auto pos-scrollbar mb-3">
+            {nearExpiryProducts.map(p => (
+              <div key={p.id} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-warning/5 text-xs">
+                <span className="text-foreground font-medium truncate flex-1">{p.name}</span>
+                <span className="text-warning font-bold ml-2">Exp: {p.expiry_date}</span>
+                <span className="text-muted-foreground ml-2">OMR {p.price.toFixed(3)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <Percent className="w-4 h-4 text-warning" />
+            <input
+              type="number"
+              placeholder="Discount %"
+              value={quickDiscountPercent || ''}
+              onChange={(e) => setQuickDiscountPercent(Number(e.target.value))}
+              className="flex-1 px-3 py-2 rounded-lg glass text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-warning"
+              min={1}
+              max={90}
+            />
+            <button
+              onClick={applyQuickDiscount}
+              disabled={applyingDiscount}
+              className="px-4 py-2 rounded-lg bg-warning/20 text-warning text-xs font-medium hover:bg-warning/30 transition-colors disabled:opacity-50"
+            >
+              {applyingDiscount ? 'Applying...' : 'Apply to All'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Live Transaction Feed */}
       <div className="glass-card rounded-xl p-4 glow-cyan">
