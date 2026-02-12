@@ -1,25 +1,29 @@
 import { useState } from 'react';
-import { Search, Plus, Edit, Trash2, Package, Download, Upload, AlertTriangle, Calendar } from 'lucide-react';
-import { products as initialProducts, categories, type Product } from '@/data/mockData';
+import { Search, Plus, Edit, Trash2, Package, Download, Upload } from 'lucide-react';
+import { useProducts, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 
 const Products = () => {
-  const [productsList] = useState<Product[]>(initialProducts);
+  const { data: productsList = [], isLoading } = useProducts();
+  const categories = useCategories();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('All Items');
 
-  // Bilingual search
   const filtered = productsList.filter(p => {
     const q = searchQuery.toLowerCase();
-    const matchSearch = p.name.toLowerCase().includes(q) || p.barcode.includes(searchQuery) || p.sku.toLowerCase().includes(q) || (p.nameAr && p.nameAr.includes(searchQuery));
+    const matchSearch = p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.includes(searchQuery)) || (p.sku && p.sku.toLowerCase().includes(q)) || (p.name_ar && p.name_ar.includes(searchQuery));
     const matchCat = filterCategory === 'All Items' || p.category === filterCategory;
     return matchSearch && matchCat;
   });
 
-  const lowStock = productsList.filter(p => p.stock <= p.minStock).length;
+  const lowStock = productsList.filter(p => p.stock <= p.min_stock).length;
   const totalValue = productsList.reduce((sum, p) => sum + (p.price * p.stock), 0);
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-64"><p className="text-sm text-muted-foreground">Loading inventory...</p></div>;
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -88,18 +92,18 @@ const Products = () => {
                       </div>
                       <div>
                         <span className="font-medium text-foreground">{product.name}</span>
-                        {product.nameAr && <p className="text-[10px] text-muted-foreground" dir="rtl">{product.nameAr}</p>}
+                        {product.name_ar && <p className="text-[10px] text-muted-foreground" dir="rtl">{product.name_ar}</p>}
                       </div>
                     </div>
                   </td>
-                  <td className="p-4 text-muted-foreground">{product.sku}</td>
-                  <td className="p-4 text-muted-foreground font-mono text-xs">{product.barcode}</td>
+                  <td className="p-4 text-muted-foreground">{product.sku || '—'}</td>
+                  <td className="p-4 text-muted-foreground font-mono text-xs">{product.barcode || '—'}</td>
                   <td className="p-4"><Badge variant="outline" className="text-xs border-border/50">{product.category}</Badge></td>
                   <td className="p-4 text-right text-muted-foreground">OMR {product.cost.toFixed(3)}</td>
                   <td className="p-4 text-right font-medium text-primary">OMR {product.price.toFixed(3)}</td>
                   <td className="p-4 text-right">
                     <span className={cn('px-2 py-1 rounded-full text-xs font-medium',
-                      product.stock <= product.minStock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success'
+                      product.stock <= product.min_stock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success'
                     )}>
                       {product.stock} {product.unit}
                     </span>

@@ -1,18 +1,32 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive } from 'lucide-react';
-import { products, categories, type Product, type CartItem, customers } from '@/data/mockData';
-import { creditCustomersAllTime } from '@/data/reportData';
+import { useProducts, useCustomers, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
 import { saveOfflineTransaction, getOfflineTransactionCount, startBackgroundSync } from '@/lib/offlineDb';
+import type { Tables } from '@/integrations/supabase/types';
+
+type DbProduct = Tables<'products'>;
+type DbCustomer = Tables<'customers'>;
+
+interface CartItem {
+  product: DbProduct;
+  quantity: number;
+  discount: number;
+}
 
 const POS = () => {
+  const { data: dbProducts = [], isLoading: productsLoading } = useProducts();
+  const { data: dbCustomers = [] } = useCustomers();
+  const categories = useCategories();
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All Items');
   const [selectedCustomer, setSelectedCustomer] = useState<string>('Walk-in Customer');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [cartDiscount, setCartDiscount] = useState(0);
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
   const [showKhat, setShowKhat] = useState(false);
@@ -48,24 +62,21 @@ const POS = () => {
     return () => clearInterval(id);
   }, []);
 
-  // Auto-focus search for barcode scanner
-  useEffect(() => {
-    searchRef.current?.focus();
-  }, []);
+  useEffect(() => { searchRef.current?.focus(); }, []);
 
   // Bilingual fuzzy search
   const filteredProducts = useMemo(() => {
-    return products.filter(p => {
+    return dbProducts.filter(p => {
       const q = searchQuery.toLowerCase();
       const matchesSearch = p.name.toLowerCase().includes(q) || 
-        p.barcode.includes(searchQuery) ||
-        (p.nameAr && p.nameAr.includes(searchQuery));
+        (p.barcode && p.barcode.includes(searchQuery)) ||
+        (p.name_ar && p.name_ar.includes(searchQuery));
       const matchesCategory = activeCategory === 'All Items' || p.category === activeCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [searchQuery, activeCategory]);
+  }, [searchQuery, activeCategory, dbProducts]);
 
-  const addToCart = useCallback((product: Product) => {
+  const addToCart = useCallback((product: DbProduct) => {
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id);
       if (existing) {
@@ -86,8 +97,7 @@ const POS = () => {
       const query = searchQuery.trim();
       if (!query) return;
       
-      // Exact barcode match first
-      const exactMatch = products.find(p => p.barcode === query);
+      const exactMatch = dbProducts.find(p => p.barcode === query);
       if (exactMatch) {
         addToCart(exactMatch);
         setSearchQuery('');
@@ -95,7 +105,6 @@ const POS = () => {
         return;
       }
       
-      // Fuzzy match - if only one result, add it
       if (filteredProducts.length === 1) {
         addToCart(filteredProducts[0]);
         setSearchQuery('');
@@ -107,7 +116,7 @@ const POS = () => {
         toast.error('No product found for this barcode/search');
       }
     }
-  }, [searchQuery, filteredProducts, addToCart]);
+  }, [searchQuery, filteredProducts, addToCart, dbProducts]);
 
   const updateQuantity = (productId: string, delta: number) => {
     setCart(prev => prev.map(item => {
@@ -122,7 +131,7 @@ const POS = () => {
   };
 
   const removeFromCart = (productId: string) => setCart(prev => prev.filter(item => item.product.id !== productId));
-  const clearCart = () => { setCart([]); setCartDiscount(0); setSelectedCustomer('Walk-in Customer'); };
+  const clearCart = () => { setCart([]); setCartDiscount(0); setSelectedCustomer('Walk-in Customer'); setSelectedCustomerId(null); };
 
   const subtotal = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
   const discountAmount = (subtotal * cartDiscount) / 100;
@@ -148,7 +157,7 @@ const POS = () => {
     const invoiceNo = `INV-${Date.now().toString(36).toUpperCase()}`;
     setLastInvoice(invoiceNo);
 
-    // Save to IndexedDB (offline-first)
+    // Save to IndexedDB (offline-first) — will sync to Supabase
     await saveOfflineTransaction({
       id: invoiceNo,
       cart: cart.map(i => ({
@@ -156,9 +165,12 @@ const POS = () => {
         productName: i.product.name,
         quantity: i.quantity,
         unitPrice: i.product.price,
+        cost: i.product.cost,
         total: i.product.price * i.quantity,
+        barcode: i.product.barcode || undefined,
       })),
       customer: selectedCustomer,
+      customerId: selectedCustomerId || undefined,
       subtotal,
       discount: discountAmount,
       tax: taxAmount,
@@ -185,11 +197,25 @@ const POS = () => {
     setTimeout(() => { clearCart(); setShowQR(false); }, 4000);
   };
 
+  // Khat customers — those with debt
+  const khatCustomers = dbCustomers.filter(c => c.total_debt > 0);
+
+  if (productsLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center space-y-3">
+          <Package className="w-12 h-12 mx-auto text-primary animate-pulse" />
+          <p className="text-sm text-muted-foreground">Loading products...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Left: Products */}
       <div className={cn("flex-1 flex flex-col min-w-0", showKhat && "hidden lg:flex")}>
-        {/* Search Bar - Bilingual + Barcode Scanner */}
+        {/* Search Bar */}
         <div className="p-4 border-b border-border/50 glass-strong">
           <div className="flex items-center gap-3">
             <div className="flex-1 relative">
@@ -205,7 +231,6 @@ const POS = () => {
                 autoFocus
               />
             </div>
-            {/* Connectivity Status */}
             <div className={cn("flex items-center gap-1.5 px-3 py-2 rounded-lg glass text-xs font-medium", online ? 'text-success' : 'text-warning')}>
               {online ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
               {online ? 'Online' : 'Offline'}
@@ -250,15 +275,15 @@ const POS = () => {
               >
                 <div className="w-full aspect-square rounded-lg bg-muted/30 flex items-center justify-center mb-2 relative">
                   <Package className="w-8 h-8 text-muted-foreground group-hover:text-primary transition-colors" />
-                  {product.stock <= product.minStock && (
+                  {product.stock <= product.min_stock && (
                     <span className="absolute top-1 right-1 text-[8px] px-1.5 py-0.5 rounded bg-destructive text-destructive-foreground font-bold">LOW</span>
                   )}
                 </div>
                 <p className="text-xs font-medium text-foreground line-clamp-2 leading-tight">{product.name}</p>
-                {product.nameAr && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1" dir="rtl">{product.nameAr}</p>}
+                {product.name_ar && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1" dir="rtl">{product.name_ar}</p>}
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-sm font-bold text-gold">OMR {product.price.toFixed(3)}</span>
-                  <span className={cn('text-[10px] px-1.5 py-0.5 rounded', product.stock <= product.minStock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success')}>
+                  <span className={cn('text-[10px] px-1.5 py-0.5 rounded', product.stock <= product.min_stock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success')}>
                     {product.stock}
                   </span>
                 </div>
@@ -287,35 +312,40 @@ const POS = () => {
               </h3>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2 pos-scrollbar">
-              {creditCustomersAllTime.filter(c => c.totalDebt > 0).slice(0, 15).map(c => (
+              {khatCustomers.map(c => (
                 <div key={c.id} className="glass rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-foreground capitalize">{c.name}</span>
                     <span className={cn(
                       'text-xs font-bold',
-                      c.totalDebt > 50 ? 'text-destructive' : c.totalDebt > 5 ? 'text-warning' : 'text-success'
+                      c.total_debt > 50 ? 'text-destructive' : c.total_debt > 5 ? 'text-warning' : 'text-success'
                     )}>
-                      <span className="text-gold">OMR</span> {c.totalDebt.toFixed(2)}
+                      <span className="text-gold">OMR</span> {Number(c.total_debt).toFixed(2)}
                     </span>
                   </div>
                   <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
                     <div className={cn(
                       'h-full rounded-full transition-all',
-                      c.totalDebt > 50 ? 'debt-gauge-red' : c.totalDebt > 5 ? 'debt-gauge-yellow' : 'debt-gauge-green'
-                    )} style={{ width: `${Math.min((c.totalDebt / 400) * 100, 100)}%` }} />
+                      c.total_debt > 50 ? 'debt-gauge-red' : c.total_debt > 5 ? 'debt-gauge-yellow' : 'debt-gauge-green'
+                    )} style={{ width: `${Math.min((Number(c.total_debt) / 400) * 100, 100)}%` }} />
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-muted-foreground">{c.phone}</span>
-                    <a 
-                      href={`https://wa.me/${c.phone.replace('+', '')}?text=${encodeURIComponent(`Hi ${c.name}, this is a friendly reminder from NAED BHAEES. Your outstanding balance is OMR ${c.totalDebt.toFixed(3)}. Thank you!`)}`}
-                      target="_blank" rel="noopener noreferrer"
-                      className="text-[10px] text-success hover:underline"
-                    >
-                      WhatsApp ↗
-                    </a>
+                    <span className="text-[10px] text-muted-foreground">{c.phone || '—'}</span>
+                    {c.phone && (
+                      <a 
+                        href={`https://wa.me/${c.phone.replace('+', '')}?text=${encodeURIComponent(`Hi ${c.name}, this is a friendly reminder from NAED BHAEES. Your outstanding balance is OMR ${Number(c.total_debt).toFixed(3)}. Thank you!`)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="text-[10px] text-success hover:underline"
+                      >
+                        WhatsApp ↗
+                      </a>
+                    )}
                   </div>
                 </div>
               ))}
+              {khatCustomers.length === 0 && (
+                <div className="text-center text-xs text-muted-foreground py-8">No outstanding debts</div>
+              )}
             </div>
           </motion.div>
         )}
@@ -328,7 +358,6 @@ const POS = () => {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-bold font-heading text-foreground">Current Sale</h2>
             <div className="flex items-center gap-2">
-              {/* Hardware Controls */}
               <button onClick={kickDrawer} className="p-1.5 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors" title="Open Cash Drawer (ESC/POS)">
                 <DoorOpen className="w-4 h-4" />
               </button>
@@ -358,9 +387,9 @@ const POS = () => {
             {showCustomerPicker && (
               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden mt-2">
                 <div className="glass rounded-lg p-2 space-y-1 max-h-32 overflow-y-auto pos-scrollbar">
-                  <button onClick={() => { setSelectedCustomer('Walk-in Customer'); setShowCustomerPicker(false); }} className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-muted/50 transition-colors text-foreground">Walk-in Customer</button>
-                  {customers.map(c => (
-                    <button key={c.id} onClick={() => { setSelectedCustomer(c.name); setShowCustomerPicker(false); }} className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-muted/50 transition-colors text-foreground">{c.name} — {c.phone}</button>
+                  <button onClick={() => { setSelectedCustomer('Walk-in Customer'); setSelectedCustomerId(null); setShowCustomerPicker(false); }} className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-muted/50 transition-colors text-foreground">Walk-in Customer</button>
+                  {dbCustomers.map(c => (
+                    <button key={c.id} onClick={() => { setSelectedCustomer(c.name); setSelectedCustomerId(c.id); setShowCustomerPicker(false); }} className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-muted/50 transition-colors text-foreground">{c.name} — {c.phone || '—'}</button>
                   ))}
                 </div>
               </motion.div>

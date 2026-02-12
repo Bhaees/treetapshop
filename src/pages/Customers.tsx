@@ -1,22 +1,22 @@
 import { useState } from 'react';
 import { Search, Plus, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen } from 'lucide-react';
-import { customers as initialCustomers, type Customer } from '@/data/mockData';
-import { creditCustomersAllTime } from '@/data/reportData';
+import { useCustomers } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const Customers = () => {
-  const [customersList] = useState<Customer[]>(initialCustomers);
+  const { data: customersList = [], isLoading } = useCustomers();
   const [searchQuery, setSearchQuery] = useState('');
 
   const filtered = customersList.filter(c =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.phone.includes(searchQuery)
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) || (c.phone && c.phone.includes(searchQuery))
   );
 
-  const totalBalance = customersList.reduce((sum, c) => sum + c.balance, 0);
+  const totalBalance = customersList.reduce((sum, c) => sum + Number(c.total_debt), 0);
 
-  // Merge credit data for display
-  const creditMap = new Map(creditCustomersAllTime.map(c => [c.name.toLowerCase(), c]));
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-64"><p className="text-sm text-muted-foreground">Loading customers...</p></div>;
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -45,8 +45,8 @@ const Customers = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.map(customer => {
-          const credit = creditMap.get(customer.name.toLowerCase());
-          const debtLevel = customer.balance > 50 ? 'red' : customer.balance > 5 ? 'yellow' : 'green';
+          const debt = Number(customer.total_debt);
+          const debtLevel = debt > 50 ? 'red' : debt > 5 ? 'yellow' : 'green';
           
           return (
             <div key={customer.id} className="glass-card rounded-xl p-5 hover:glow-cyan transition-all animate-fade-in">
@@ -57,7 +57,7 @@ const Customers = () => {
                   </div>
                   <div>
                     <h3 className="font-semibold text-foreground">{customer.name}</h3>
-                    <p className="text-xs text-muted-foreground">Since {new Date(customer.createdAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-muted-foreground">Since {new Date(customer.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
                 <div className="flex gap-1">
@@ -66,13 +66,12 @@ const Customers = () => {
                 </div>
               </div>
               <div className="space-y-1.5 text-xs text-muted-foreground">
-                <div className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" />{customer.phone}</div>
+                {customer.phone && <div className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" />{customer.phone}</div>}
                 {customer.email && <div className="flex items-center gap-2"><Mail className="w-3.5 h-3.5" />{customer.email}</div>}
                 {customer.address && <div className="flex items-center gap-2"><MapPin className="w-3.5 h-3.5" />{customer.address}</div>}
               </div>
               
-              {/* Debt Health Gauge */}
-              {customer.balance > 0 && (
+              {debt > 0 && (
                 <div className="mt-3 pt-3 border-t border-border/30">
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="text-muted-foreground flex items-center gap-1"><BookOpen className="w-3 h-3" /> Khat Balance</span>
@@ -80,14 +79,14 @@ const Customers = () => {
                       'font-bold',
                       debtLevel === 'red' ? 'text-destructive' : debtLevel === 'yellow' ? 'text-warning' : 'text-success'
                     )}>
-                      OMR {customer.balance.toFixed(3)}
+                      OMR {debt.toFixed(3)}
                     </span>
                   </div>
                   <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
                     <div className={cn(
                       'h-full rounded-full transition-all',
                       debtLevel === 'red' ? 'debt-gauge-red' : debtLevel === 'yellow' ? 'debt-gauge-yellow' : 'debt-gauge-green'
-                    )} style={{ width: `${Math.min((customer.balance / 300) * 100, 100)}%` }} />
+                    )} style={{ width: `${Math.min((debt / 300) * 100, 100)}%` }} />
                   </div>
                 </div>
               )}
@@ -95,12 +94,12 @@ const Customers = () => {
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/30">
                 <div>
                   <p className="text-xs text-muted-foreground">Total Purchases</p>
-                  <p className="text-sm font-semibold text-foreground">OMR {customer.totalPurchases.toFixed(3)}</p>
+                  <p className="text-sm font-semibold text-foreground">OMR {Number(customer.total_spent).toFixed(3)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-muted-foreground">Balance</p>
-                  <p className={`text-sm font-semibold ${customer.balance > 0 ? 'text-destructive' : 'text-success'}`}>
-                    OMR {customer.balance.toFixed(3)}
+                  <p className="text-xs text-muted-foreground">Debt</p>
+                  <p className={`text-sm font-semibold ${debt > 0 ? 'text-destructive' : 'text-success'}`}>
+                    OMR {debt.toFixed(3)}
                   </p>
                 </div>
               </div>

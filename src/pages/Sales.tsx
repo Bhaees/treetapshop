@@ -1,21 +1,25 @@
 import { useState } from 'react';
 import { Search, Download, Eye, RotateCcw } from 'lucide-react';
-import { sales as initialSales, type Sale } from '@/data/mockData';
+import { useTransactions } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const Sales = () => {
-  const [salesList] = useState<Sale[]>(initialSales);
+  const { data: salesList = [], isLoading } = useTransactions();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const filtered = salesList.filter(s => {
-    const matchSearch = s.invoiceNo.toLowerCase().includes(searchQuery.toLowerCase()) || s.customerName.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchSearch = s.invoice_no.toLowerCase().includes(searchQuery.toLowerCase()) || s.customer_name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchStatus = statusFilter === 'all' || s.status === statusFilter;
     return matchSearch && matchStatus;
   });
 
-  const totalRevenue = salesList.filter(s => s.status === 'completed').reduce((sum, s) => sum + s.total, 0);
+  const totalRevenue = salesList.filter(s => s.status === 'paid').reduce((sum, s) => sum + Number(s.total), 0);
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-64"><p className="text-sm text-muted-foreground">Loading sales...</p></div>;
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -43,7 +47,7 @@ const Sales = () => {
           />
         </div>
         <div className="flex gap-2">
-          {['all', 'completed', 'refunded', 'pending'].map(status => (
+          {['all', 'paid', 'credit', 'refunded'].map(status => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -74,37 +78,41 @@ const Sales = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(sale => (
-                <tr key={sale.id} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
-                  <td className="p-4 font-medium text-primary">{sale.invoiceNo}</td>
-                  <td className="p-4 text-foreground">{sale.customerName}</td>
-                  <td className="p-4 text-muted-foreground">{new Date(sale.createdAt).toLocaleDateString()}</td>
-                  <td className="p-4 text-right text-muted-foreground">{sale.items.reduce((s, i) => s + i.quantity, 0)}</td>
-                  <td className="p-4 text-right font-semibold text-foreground">OMR {sale.total.toFixed(3)}</td>
-                  <td className="p-4 text-center"><span className="px-2 py-1 rounded-full glass text-xs">{sale.paymentMethod}</span></td>
-                  <td className="p-4 text-center">
-                    <span className={cn('px-2 py-1 rounded-full text-xs font-medium',
-                      sale.status === 'completed' && 'bg-success/20 text-success',
-                      sale.status === 'refunded' && 'bg-destructive/20 text-destructive',
-                      sale.status === 'pending' && 'bg-warning/20 text-warning',
-                    )}>
-                      {sale.status}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center justify-center gap-2">
-                      <button onClick={() => toast.info('Invoice preview coming soon')} className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground">
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      {sale.status === 'completed' && (
-                        <button onClick={() => toast.info('Refund flow coming soon')} className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive">
-                          <RotateCcw className="w-4 h-4" />
+              {filtered.map(sale => {
+                const items = (sale as any).transaction_items || [];
+                const itemCount = items.reduce((s: number, i: any) => s + Number(i.quantity), 0);
+                return (
+                  <tr key={sale.id} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
+                    <td className="p-4 font-medium text-primary">{sale.invoice_no}</td>
+                    <td className="p-4 text-foreground">{sale.customer_name}</td>
+                    <td className="p-4 text-muted-foreground">{new Date(sale.created_at).toLocaleDateString()}</td>
+                    <td className="p-4 text-right text-muted-foreground">{itemCount}</td>
+                    <td className="p-4 text-right font-semibold text-foreground">OMR {Number(sale.total).toFixed(3)}</td>
+                    <td className="p-4 text-center"><span className="px-2 py-1 rounded-full glass text-xs capitalize">{sale.payment_type}</span></td>
+                    <td className="p-4 text-center">
+                      <span className={cn('px-2 py-1 rounded-full text-xs font-medium',
+                        sale.status === 'paid' && 'bg-success/20 text-success',
+                        sale.status === 'refunded' && 'bg-destructive/20 text-destructive',
+                        sale.status === 'credit' && 'bg-warning/20 text-warning',
+                      )}>
+                        {sale.status}
+                      </span>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center justify-center gap-2">
+                        <button onClick={() => toast.info('Invoice preview coming soon')} className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground">
+                          <Eye className="w-4 h-4" />
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {sale.status === 'paid' && (
+                          <button onClick={() => toast.info('Refund flow coming soon')} className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive">
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
