@@ -1,21 +1,49 @@
 import { DollarSign, ShoppingCart, Package, Users, TrendingUp } from 'lucide-react';
 import StatCard from '@/components/dashboard/StatCard';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { dailySalesData, topSellingProducts, sales, products, customers } from '@/data/mockData';
-import { digitalSummary } from '@/data/reportData';
+import { useProducts, useCustomers, useTransactions } from '@/hooks/useSupabaseData';
+import { useMemo } from 'react';
 
 const COLORS = ['hsl(187, 100%, 50%)', 'hsl(160, 84%, 39%)', 'hsl(38, 92%, 50%)', 'hsl(0, 72%, 51%)', 'hsl(270, 70%, 55%)'];
 
-const categoryData = [
-  { name: 'Beverages', value: 35 },
-  { name: 'Snacks', value: 25 },
-  { name: 'Dairy', value: 20 },
-  { name: 'Household', value: 12 },
-  { name: 'Other', value: 8 },
-];
-
 const Dashboard = () => {
-  const s = digitalSummary;
+  const { data: products = [] } = useProducts();
+  const { data: customers = [] } = useCustomers();
+  const { data: transactions = [] } = useTransactions();
+
+  const totalSales = useMemo(() => transactions.reduce((s, t) => s + Number(t.total), 0), [transactions]);
+  const totalDebt = useMemo(() => customers.reduce((s, c) => s + Number(c.total_debt), 0), [customers]);
+  const lowStock = products.filter(p => p.stock <= p.min_stock).length;
+
+  // Category breakdown
+  const categoryData = useMemo(() => {
+    const map = new Map<string, number>();
+    products.forEach(p => map.set(p.category, (map.get(p.category) || 0) + p.stock));
+    const total = Array.from(map.values()).reduce((a, b) => a + b, 0) || 1;
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, value]) => ({ name, value: Math.round((value / total) * 100) }));
+  }, [products]);
+
+  // Recent sales (last 5)
+  const recentSales = transactions.slice(0, 5);
+
+  // Daily sales data (last 7 days)
+  const dailySalesData = useMemo(() => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const now = new Date();
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() - (6 - i));
+      const dayStr = days[d.getDay()];
+      const dayTxns = transactions.filter(t => {
+        const td = new Date(t.created_at);
+        return td.toDateString() === d.toDateString();
+      });
+      return { day: dayStr, sales: dayTxns.reduce((s, t) => s + Number(t.total), 0), orders: dayTxns.length };
+    });
+  }, [transactions]);
 
   return (
     <div className="p-6 space-y-6">
@@ -32,10 +60,10 @@ const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Today's Sales" value={`OMR ${s.grandTotalSales.toFixed(2)}`} change={`${s.totalTransactions} transactions`} changeType="positive" icon={DollarSign} iconColor="gradient-cyan" />
-        <StatCard title="Net Cash" value={`OMR ${s.netCash.toFixed(2)}`} change="in drawer" changeType="positive" icon={ShoppingCart} iconColor="bg-success" />
-        <StatCard title="Products" value={products.length.toString()} change={`${products.filter(p => p.stock <= p.minStock).length} low stock`} changeType="negative" icon={Package} iconColor="bg-warning" />
-        <StatCard title="Market Debt" value={`OMR ${s.outstanding[2].amount.toFixed(2)}`} change="outstanding khat" changeType="negative" icon={Users} iconColor="bg-destructive" />
+        <StatCard title="Total Sales" value={`OMR ${totalSales.toFixed(2)}`} change={`${transactions.length} transactions`} changeType="positive" icon={DollarSign} iconColor="gradient-cyan" />
+        <StatCard title="Transactions" value={transactions.length.toString()} change="all time" changeType="positive" icon={ShoppingCart} iconColor="bg-success" />
+        <StatCard title="Products" value={products.length.toString()} change={`${lowStock} low stock`} changeType="negative" icon={Package} iconColor="bg-warning" />
+        <StatCard title="Market Debt" value={`OMR ${totalDebt.toFixed(2)}`} change="outstanding khat" changeType="negative" icon={Users} iconColor="bg-destructive" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -53,61 +81,49 @@ const Dashboard = () => {
         </div>
 
         <div className="glass-card rounded-xl p-5">
-          <h3 className="text-base font-semibold font-heading text-foreground mb-4">Sales by Category</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={categoryData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={3}>
-                {categoryData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-              </Pie>
-              <Tooltip contentStyle={{ background: 'hsl(0, 0%, 8%)', border: '1px solid hsla(0, 0%, 100%, 0.1)', borderRadius: '8px', color: 'hsl(180, 100%, 95%)', fontSize: '12px' }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="space-y-2 mt-2">
-            {categoryData.map((cat, i) => (
-              <div key={cat.name} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[i] }} />
-                  <span className="text-muted-foreground">{cat.name}</span>
-                </div>
-                <span className="font-medium text-foreground">{cat.value}%</span>
+          <h3 className="text-base font-semibold font-heading text-foreground mb-4">Stock by Category</h3>
+          {categoryData.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={categoryData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={3}>
+                    {categoryData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ background: 'hsl(0, 0%, 8%)', border: '1px solid hsla(0, 0%, 100%, 0.1)', borderRadius: '8px', color: 'hsl(180, 100%, 95%)', fontSize: '12px' }} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-2 mt-2">
+                {categoryData.map((cat, i) => (
+                  <div key={cat.name} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[i] }} />
+                      <span className="text-muted-foreground">{cat.name}</span>
+                    </div>
+                    <span className="font-medium text-foreground">{cat.value}%</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">No data yet</div>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="glass-card rounded-xl p-5">
-          <h3 className="text-base font-semibold font-heading text-foreground mb-4">Top Selling Products</h3>
+      <div className="glass-card rounded-xl p-5">
+        <h3 className="text-base font-semibold font-heading text-foreground mb-4">Recent Sales</h3>
+        {recentSales.length > 0 ? (
           <div className="space-y-3">
-            {topSellingProducts.map((product, i) => (
-              <div key={product.name} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full gradient-cyan text-primary-foreground text-xs font-bold flex items-center justify-center">{i + 1}</span>
-                  <span className="text-sm text-foreground">{product.name}</span>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-foreground">OMR {product.revenue}</p>
-                  <p className="text-xs text-muted-foreground">{product.sold} sold</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="glass-card rounded-xl p-5">
-          <h3 className="text-base font-semibold font-heading text-foreground mb-4">Recent Sales</h3>
-          <div className="space-y-3">
-            {sales.slice(0, 5).map((sale) => (
+            {recentSales.map((sale) => (
               <div key={sale.id} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
                 <div>
-                  <p className="text-sm font-medium text-foreground">{sale.invoiceNo}</p>
-                  <p className="text-xs text-muted-foreground">{sale.customerName}</p>
+                  <p className="text-sm font-medium text-foreground">{sale.invoice_no}</p>
+                  <p className="text-xs text-muted-foreground">{sale.customer_name}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-foreground">OMR {sale.total.toFixed(2)}</p>
+                  <p className="text-sm font-semibold text-foreground">OMR {Number(sale.total).toFixed(2)}</p>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                    sale.status === 'completed' ? 'bg-success/20 text-success' :
+                    sale.status === 'paid' ? 'bg-success/20 text-success' :
                     sale.status === 'refunded' ? 'bg-destructive/20 text-destructive' :
                     'bg-warning/20 text-warning'
                   }`}>
@@ -117,7 +133,9 @@ const Dashboard = () => {
               </div>
             ))}
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No sales yet — make your first sale from the POS!</div>
+        )}
       </div>
     </div>
   );
