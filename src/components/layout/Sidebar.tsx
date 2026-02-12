@@ -11,18 +11,19 @@ import {
   ChevronLeft,
   ChevronRight,
   Store,
-  LogOut,
+  Smartphone,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: ShoppingCart, label: 'POS', path: '/pos' },
-  { icon: Package, label: 'Products', path: '/products' },
+  { icon: ShoppingCart, label: 'POS Terminal', path: '/pos' },
+  { icon: Package, label: 'Inventory', path: '/products' },
   { icon: Users, label: 'Customers', path: '/customers' },
   { icon: Receipt, label: 'Sales', path: '/sales' },
   { icon: BarChart3, label: 'Reports', path: '/reports' },
+  { icon: Smartphone, label: 'Owner View', path: '/owner' },
   { icon: Settings, label: 'Settings', path: '/settings' },
 ];
 
@@ -35,11 +36,11 @@ const Sidebar = () => {
     <motion.aside
       animate={{ width: collapsed ? 72 : 260 }}
       transition={{ duration: 0.2, ease: 'easeInOut' }}
-      className="h-screen flex flex-col bg-sidebar border-r border-sidebar-border sticky top-0 z-40"
+      className="h-screen flex flex-col glass-strong sticky top-0 z-40"
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 h-16 border-b border-sidebar-border">
-        <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+      <div className="flex items-center gap-3 px-4 h-16 border-b border-border/50">
+        <div className="w-9 h-9 rounded-lg gradient-cyan flex items-center justify-center flex-shrink-0 glow-cyan">
           <Store className="w-5 h-5 text-primary-foreground" />
         </div>
         <AnimatePresence>
@@ -50,8 +51,8 @@ const Sidebar = () => {
               exit={{ opacity: 0, width: 0 }}
               className="overflow-hidden whitespace-nowrap"
             >
-              <h1 className="text-sm font-bold text-sidebar-primary-foreground tracking-tight">NAED BHAEES</h1>
-              <p className="text-[10px] text-sidebar-foreground tracking-widest uppercase">Point of Sale</p>
+              <h1 className="text-sm font-bold font-heading text-primary text-glow tracking-tight">NAED BHAEES</h1>
+              <p className="text-[10px] text-muted-foreground tracking-widest uppercase">Point of Sale</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -66,9 +67,9 @@ const Sidebar = () => {
               key={item.path}
               onClick={() => navigate(item.path)}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
+                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
                 isActive
-                  ? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
+                  ? 'gradient-cyan text-primary-foreground glow-cyan-strong'
                   : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
               )}
             >
@@ -91,7 +92,7 @@ const Sidebar = () => {
       </nav>
 
       {/* Collapse Toggle */}
-      <div className="p-2 border-t border-sidebar-border">
+      <div className="p-2 border-t border-border/50">
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="w-full flex items-center justify-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
