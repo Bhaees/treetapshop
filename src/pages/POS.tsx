@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle, Scale } from 'lucide-react';
+import Fuse from 'fuse.js';
 import { useProducts, useCustomers, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -38,6 +39,17 @@ const DEFAULT_CAT_COLOR = { bg: 'bg-muted/20', border: 'border-border/20', icon:
 const getCatColor = (cat: string) => CATEGORY_COLORS[cat] || DEFAULT_CAT_COLOR;
 
 const MAX_DISPLAYED_PRODUCTS = 100; // Limit render for performance with large catalogs
+
+// Parse Price-Embedded Barcodes (Prefix 20) — CAS CL5200 scale format
+// Format: 20PPPPPVVVVVC where P=product code (5 digits), V=price (5 digits, 3 decimal), C=check
+const parseWeighBarcode = (barcode: string): { productCode: string; totalPrice: number } | null => {
+  if (!barcode || barcode.length < 13 || !barcode.startsWith('20')) return null;
+  const productCode = barcode.substring(2, 7); // digits 3-7
+  const priceRaw = barcode.substring(7, 12);   // digits 8-12
+  const totalPrice = parseInt(priceRaw, 10) / 1000; // 3 decimal places (OMR)
+  if (isNaN(totalPrice) || totalPrice <= 0) return null;
+  return { productCode, totalPrice };
+};
 
 const POS = () => {
   const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
@@ -90,29 +102,58 @@ const POS = () => {
 
   useEffect(() => { searchRef.current?.focus(); }, []);
 
+  // Fuse.js index for bilingual fuzzy search across 40K+ products
+  const fuse = useMemo(() => new Fuse(dbProducts, {
+    keys: [
+      { name: 'name', weight: 0.5 },
+      { name: 'name_ar', weight: 0.5 },
+      { name: 'barcode', weight: 0.3 },
+      { name: 'sku', weight: 0.2 },
+    ],
+    threshold: 0.35,
+    includeScore: true,
+    minMatchCharLength: 2,
+  }), [dbProducts]);
+
   // Bilingual fuzzy search — capped for 40K+ catalog performance
   const filteredProducts = useMemo(() => {
-    const results = dbProducts.filter(p => {
-      const q = searchQuery.toLowerCase();
-      const matchesSearch = !q || p.name.toLowerCase().includes(q) || 
-        (p.barcode && p.barcode.includes(searchQuery)) ||
-        (p.name_ar && p.name_ar.includes(searchQuery));
-      const matchesCategory = activeCategory === 'All Items' || p.category === activeCategory;
-      return matchesSearch && matchesCategory;
-    });
+    let results: DbProduct[];
+    const q = searchQuery.trim();
+
+    if (!q) {
+      results = activeCategory === 'All Items'
+        ? dbProducts
+        : dbProducts.filter(p => p.category === activeCategory);
+    } else {
+      const exactBarcode = dbProducts.find(p => p.barcode === q);
+      if (exactBarcode) {
+        results = [exactBarcode];
+      } else {
+        const fuseResults = fuse.search(q);
+        results = fuseResults.map(r => r.item);
+        if (activeCategory !== 'All Items') {
+          results = results.filter(p => p.category === activeCategory);
+        }
+      }
+    }
     return results.slice(0, MAX_DISPLAYED_PRODUCTS);
-  }, [searchQuery, activeCategory, dbProducts]);
+  }, [searchQuery, activeCategory, dbProducts, fuse]);
 
   const totalFilteredCount = useMemo(() => {
-    return dbProducts.filter(p => {
-      const q = searchQuery.toLowerCase();
-      const matchesSearch = !q || p.name.toLowerCase().includes(q) || 
-        (p.barcode && p.barcode.includes(searchQuery)) ||
-        (p.name_ar && p.name_ar.includes(searchQuery));
-      const matchesCategory = activeCategory === 'All Items' || p.category === activeCategory;
-      return matchesSearch && matchesCategory;
-    }).length;
-  }, [searchQuery, activeCategory, dbProducts]);
+    const q = searchQuery.trim();
+    if (!q) {
+      return activeCategory === 'All Items'
+        ? dbProducts.length
+        : dbProducts.filter(p => p.category === activeCategory).length;
+    }
+    const exactBarcode = dbProducts.find(p => p.barcode === q);
+    if (exactBarcode) return 1;
+    let results = fuse.search(q).map(r => r.item);
+    if (activeCategory !== 'All Items') {
+      results = results.filter(p => p.category === activeCategory);
+    }
+    return results.length;
+  }, [searchQuery, activeCategory, dbProducts, fuse]);
 
   const addToCart = useCallback((product: DbProduct) => {
     setCart(prev => {
@@ -128,21 +169,62 @@ const POS = () => {
     });
   }, []);
 
-  // Barcode scanner: Enter key instantly adds exact barcode match
+  // Add weighted item from scale barcode
+  const addWeighedItem = useCallback((product: DbProduct, totalPrice: number) => {
+    if (product.price <= 0) {
+      toast.error(`Cannot calculate weight: ${product.name} has no price set`);
+      return;
+    }
+    const weight = totalPrice / product.price;
+    setCart(prev => {
+      const existing = prev.find(item => item.product.id === product.id);
+      if (existing) {
+        return prev.map(item =>
+          item.product.id === product.id
+            ? { ...item, quantity: Math.round((item.quantity + weight) * 1000) / 1000 }
+            : item
+        );
+      }
+      return [...prev, { product, quantity: Math.round(weight * 1000) / 1000, discount: 0 }];
+    });
+    toast.success(`⚖️ ${product.name}: ${weight.toFixed(3)} kg = OMR ${totalPrice.toFixed(3)}`, { duration: 2000 });
+  }, []);
+
+  // Process barcode: prefix-20 weigh barcodes + regular
+  const processBarcodeInput = useCallback((barcode: string): boolean => {
+    const weighed = parseWeighBarcode(barcode);
+    if (weighed) {
+      const match = dbProducts.find(p =>
+        p.barcode && (p.barcode === weighed.productCode || p.barcode.endsWith(weighed.productCode))
+      );
+      if (match) {
+        addWeighedItem(match, weighed.totalPrice);
+        return true;
+      }
+      toast.error(`Weighed barcode: product code "${weighed.productCode}" not found. Price: OMR ${weighed.totalPrice.toFixed(3)}`);
+      return true;
+    }
+    const exactMatch = dbProducts.find(p => p.barcode === barcode);
+    if (exactMatch) {
+      addToCart(exactMatch);
+      toast.success(`✓ Scanned: ${exactMatch.name}`, { duration: 1500 });
+      return true;
+    }
+    return false;
+  }, [dbProducts, addToCart, addWeighedItem]);
+
+  // Barcode scanner: Enter key
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       const query = searchQuery.trim();
       if (!query) return;
-      
-      const exactMatch = dbProducts.find(p => p.barcode === query);
-      if (exactMatch) {
-        addToCart(exactMatch);
+
+      if (processBarcodeInput(query)) {
         setSearchQuery('');
-        toast.success(`✓ Scanned: ${exactMatch.name}`, { duration: 1500 });
         return;
       }
-      
+
       if (filteredProducts.length === 1) {
         addToCart(filteredProducts[0]);
         setSearchQuery('');
@@ -154,46 +236,40 @@ const POS = () => {
         toast.error('No product found for this barcode/search');
       }
     }
-  }, [searchQuery, filteredProducts, addToCart, dbProducts]);
+  }, [searchQuery, filteredProducts, addToCart, processBarcodeInput]);
 
-  // Camera scan handler — matches barcode or prompts to add new product
+  // Camera scan handler — supports prefix-20 weigh barcodes + regular
   const handleCameraScan = useCallback((barcode: string) => {
-    const match = dbProducts.find(p => p.barcode === barcode);
-    if (match) {
-      addToCart(match);
-      toast.success(`✓ Scanned: ${match.name}`, { duration: 1500 });
-    } else {
-      // Product not found — offer to create
-      toast(`Barcode "${barcode}" not found`, {
-        description: 'Would you like to add a new product with this barcode?',
-        action: {
-          label: 'Add Product',
-          onClick: () => {
-            // Quick-add: create a placeholder product
-            supabase
-              .from('products')
-              .insert({
-                name: `New Product (${barcode})`,
-                barcode: barcode,
-                price: 0,
-                cost: 0,
-                stock: 0,
-                category: 'Uncategorized',
-                unit: 'piece',
-              })
-              .then(({ error }) => {
-                if (error) {
-                  toast.error('Failed to add product');
-                } else {
-                  toast.success(`Product created with barcode ${barcode}. Edit it in Products page.`);
-                }
-              });
-          },
+    if (processBarcodeInput(barcode)) return;
+
+    toast(`Barcode "${barcode}" not found`, {
+      description: 'Would you like to add a new product with this barcode?',
+      action: {
+        label: 'Add Product',
+        onClick: () => {
+          supabase
+            .from('products')
+            .insert({
+              name: `New Product (${barcode})`,
+              barcode: barcode,
+              price: 0,
+              cost: 0,
+              stock: 0,
+              category: 'Uncategorized',
+              unit: 'piece',
+            })
+            .then(({ error }) => {
+              if (error) {
+                toast.error('Failed to add product');
+              } else {
+                toast.success(`Product created with barcode ${barcode}. Edit it in Products page.`);
+              }
+            });
         },
-        duration: 8000,
-      });
-    }
-  }, [dbProducts, addToCart]);
+      },
+      duration: 8000,
+    });
+  }, [processBarcodeInput]);
 
   const updateQuantity = (productId: string, delta: number) => {
     setCart(prev => prev.map(item => {
