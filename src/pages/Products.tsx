@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { Search, Plus, Edit, Trash2, Package, Download, Upload, Loader2 } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
+import { Search, Plus, Edit, Trash2, Package, Download, Upload, Loader2, ImagePlus, Sparkles } from 'lucide-react';
 import { useProducts, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -14,8 +14,48 @@ const Products = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('All Items');
   const [importing, setImporting] = useState(false);
+  const [generatingImages, setGeneratingImages] = useState(false);
+  const [imageGenProgress, setImageGenProgress] = useState({ done: 0, total: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+
+  // Generate AI images for products that don't have one
+  const generateProductImages = useCallback(async () => {
+    const productsWithoutImages = productsList.filter(p => !p.image_url);
+    if (productsWithoutImages.length === 0) {
+      toast.info('All products already have images!');
+      return;
+    }
+
+    setGeneratingImages(true);
+    setImageGenProgress({ done: 0, total: Math.min(productsWithoutImages.length, 50) });
+    
+    // Process in batches of 50 max per session to avoid overload
+    const batch = productsWithoutImages.slice(0, 50);
+    let done = 0;
+
+    for (const product of batch) {
+      try {
+        const { data, error } = await supabase.functions.invoke('generate-product-image', {
+          body: { productId: product.id, productName: product.name, category: product.category },
+        });
+
+        if (error) {
+          console.error(`Image gen failed for ${product.name}:`, error);
+        } else {
+          done++;
+          setImageGenProgress({ done, total: batch.length });
+        }
+      } catch (err) {
+        console.error(`Image gen error for ${product.name}:`, err);
+      }
+    }
+
+    toast.success(`Generated ${done} product images!`);
+    queryClient.invalidateQueries({ queryKey: ['products'] });
+    setGeneratingImages(false);
+    setImageGenProgress({ done: 0, total: 0 });
+  }, [productsList, queryClient]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -111,6 +151,14 @@ const Products = () => {
           <p className="text-sm text-muted-foreground">{productsList.length} products · {lowStock} low stock · Value: OMR {totalValue.toFixed(3)}</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={generateProductImages}
+            disabled={generatingImages}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gold/20 text-gold text-sm font-medium hover:bg-gold/30 transition-colors disabled:opacity-50"
+          >
+            {generatingImages ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {generatingImages ? `Generating ${imageGenProgress.done}/${imageGenProgress.total}...` : 'AI Images'}
+          </button>
           <button className="flex items-center gap-2 px-4 py-2 rounded-lg glass text-sm font-medium text-foreground hover:bg-muted/30 transition-colors">
             <Download className="w-4 h-4" /> Export
           </button>
@@ -175,8 +223,14 @@ const Products = () => {
                 <tr key={product.id} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
                   <td className="p-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg glass flex items-center justify-center">
-                        <Package className="w-4 h-4 text-primary" />
+                      <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-muted/20">
+                        {product.image_url ? (
+                          <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Package className="w-4 h-4 text-primary" />
+                          </div>
+                        )}
                       </div>
                       <div>
                         <span className="font-medium text-foreground">{product.name}</span>
