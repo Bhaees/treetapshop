@@ -1,15 +1,91 @@
-import { useState } from 'react';
-import { Search, Plus, Edit, Trash2, Package, Download, Upload } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Search, Plus, Edit, Trash2, Package, Download, Upload, Loader2 } from 'lucide-react';
 import { useProducts, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { supabase } from '@/integrations/supabase/client';
+import * as XLSX from 'xlsx';
+import { useQueryClient } from '@tanstack/react-query';
 
 const Products = () => {
   const { data: productsList = [], isLoading } = useProducts();
   const categories = useCategories();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('All Items');
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+
+    try {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data);
+      let totalInserted = 0;
+
+      for (const sheetName of wb.SheetNames) {
+        const ws = wb.Sheets[sheetName];
+        const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        if (rows.length < 2) continue;
+
+        // Find header row
+        const header = rows[0] as string[];
+        const nameIdx = header.findIndex(h => h && h.toString().toLowerCase().includes('product'));
+        const valueIdx = header.findIndex(h => h && h.toString().toLowerCase().includes('stock value'));
+        const stockIdx = header.findIndex(h => h && h.toString().toLowerCase().includes('in stock'));
+
+        if (nameIdx === -1 || stockIdx === -1) continue;
+
+        // Build markdown table for the edge function
+        const lines = ['|Product name|Total stock value|In Stock|'];
+        lines.push('|-|-|-|');
+
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          const name = row[nameIdx]?.toString()?.trim();
+          if (!name) continue;
+          const val = Number(row[valueIdx >= 0 ? valueIdx : 1]) || 0;
+          const stock = Number(row[stockIdx]) || 0;
+          lines.push(`|${name.replace(/\|/g, '/')}|${val}|${stock}|`);
+        }
+
+        // Send in chunks of 500 lines
+        const CHUNK = 500;
+        const dataLines = lines.slice(2); // exclude header + separator
+        const headerLines = lines.slice(0, 2).join('\n');
+
+        for (let i = 0; i < dataLines.length; i += CHUNK) {
+          const chunk = dataLines.slice(i, i + CHUNK);
+          const markdown = headerLines + '\n' + chunk.join('\n');
+
+          const { data: result, error } = await supabase.functions.invoke('import-products', {
+            body: { markdown },
+          });
+
+          if (error) {
+            console.error('Import chunk error:', error);
+            toast.error(`Import error at batch ${Math.floor(i / CHUNK) + 1}`);
+          } else {
+            totalInserted += result.inserted || 0;
+            toast.info(`Imported ${totalInserted} products so far...`);
+          }
+        }
+      }
+
+      toast.success(`Import complete! ${totalInserted} products added.`);
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    } catch (err: any) {
+      console.error('Import failed:', err);
+      toast.error('Import failed: ' + err.message);
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
 
   const filtered = productsList.filter(p => {
     const q = searchQuery.toLowerCase();
@@ -38,8 +114,20 @@ const Products = () => {
           <button className="flex items-center gap-2 px-4 py-2 rounded-lg glass text-sm font-medium text-foreground hover:bg-muted/30 transition-colors">
             <Download className="w-4 h-4" /> Export
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg glass text-sm font-medium text-foreground hover:bg-muted/30 transition-colors">
-            <Upload className="w-4 h-4" /> Import
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={handleImport}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg glass text-sm font-medium text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+          >
+            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {importing ? 'Importing...' : 'Import'}
           </button>
           <button onClick={() => toast.info('Add product form coming soon')} className="flex items-center gap-2 px-4 py-2 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
             <Plus className="w-4 h-4" /> Add Product
@@ -83,7 +171,7 @@ const Products = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(product => (
+              {filtered.slice(0, 200).map(product => (
                 <tr key={product.id} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
                   <td className="p-4">
                     <div className="flex items-center gap-3">
@@ -123,6 +211,11 @@ const Products = () => {
             </tbody>
           </table>
         </div>
+        {filtered.length > 200 && (
+          <div className="flex items-center justify-center py-3 text-muted-foreground text-xs border-t border-border/30">
+            Showing 200 of {filtered.length} products. Use search to find specific items.
+          </div>
+        )}
         {filtered.length === 0 && (
           <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">No products found</div>
         )}
