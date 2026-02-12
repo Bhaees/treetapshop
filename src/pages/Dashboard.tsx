@@ -1,10 +1,11 @@
-import { DollarSign, ShoppingCart, Package, Users, TrendingUp } from 'lucide-react';
+import { DollarSign, ShoppingCart, Package, Users } from 'lucide-react';
 import StatCard from '@/components/dashboard/StatCard';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useProducts, useCustomers, useTransactions } from '@/hooks/useSupabaseData';
 import { useMemo } from 'react';
+import heroBanner from '@/assets/hero-banner.jpg';
 
-const COLORS = ['hsl(187, 100%, 50%)', 'hsl(160, 84%, 39%)', 'hsl(38, 92%, 50%)', 'hsl(0, 72%, 51%)', 'hsl(270, 70%, 55%)'];
+const COLORS = ['hsl(160, 60%, 45%)', 'hsl(43, 74%, 52%)', 'hsl(200, 70%, 50%)', 'hsl(280, 60%, 55%)', 'hsl(0, 65%, 50%)'];
 
 const Dashboard = () => {
   const { data: products = [] } = useProducts();
@@ -15,7 +16,6 @@ const Dashboard = () => {
   const totalDebt = useMemo(() => customers.reduce((s, c) => s + Number(c.total_debt), 0), [customers]);
   const lowStock = products.filter(p => p.stock <= p.min_stock).length;
 
-  // Category breakdown
   const categoryData = useMemo(() => {
     const map = new Map<string, number>();
     products.forEach(p => map.set(p.category, (map.get(p.category) || 0) + p.stock));
@@ -26,10 +26,8 @@ const Dashboard = () => {
       .map(([name, value]) => ({ name, value: Math.round((value / total) * 100) }));
   }, [products]);
 
-  // Recent sales (last 5)
   const recentSales = transactions.slice(0, 5);
 
-  // Daily sales data (last 7 days)
   const dailySalesData = useMemo(() => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const now = new Date();
@@ -47,40 +45,53 @@ const Dashboard = () => {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold font-heading text-foreground">
-            <span className="text-primary text-glow">Dashboard</span>
-          </h1>
-          <p className="text-sm text-muted-foreground">Welcome back! Here's your store overview.</p>
-        </div>
-        <div className="text-sm text-muted-foreground">
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+      {/* Premium Hero Banner */}
+      <div className="relative rounded-2xl overflow-hidden glow-cyan" style={{ minHeight: 180 }}>
+        <img src={heroBanner} alt="BHAEES POS" className="w-full h-full object-cover absolute inset-0" style={{ minHeight: 180 }} />
+        <div className="relative z-10 p-8 flex items-center justify-between" style={{ minHeight: 180 }}>
+          <div>
+            <h1 className="text-3xl font-bold font-heading text-foreground">
+              <span className="text-primary text-glow">BHAEES</span>{' '}
+              <span className="text-gold text-glow-gold">POS</span>
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">Welcome back! Here's your store overview.</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Total Sales" value={`OMR ${totalSales.toFixed(2)}`} change={`${transactions.length} transactions`} changeType="positive" icon={DollarSign} iconColor="gradient-cyan" />
-        <StatCard title="Transactions" value={transactions.length.toString()} change="all time" changeType="positive" icon={ShoppingCart} iconColor="bg-success" />
+        <StatCard title="Transactions" value={transactions.length.toString()} change="all time" changeType="positive" icon={ShoppingCart} iconColor="gradient-gold" />
         <StatCard title="Products" value={products.length.toString()} change={`${lowStock} low stock`} changeType="negative" icon={Package} iconColor="bg-warning" />
         <StatCard title="Market Debt" value={`OMR ${totalDebt.toFixed(2)}`} change="outstanding khat" changeType="negative" icon={Users} iconColor="bg-destructive" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 glass-card rounded-xl p-5 glow-cyan">
+        <div className="lg:col-span-2 glass-card rounded-2xl p-6 glow-cyan">
           <h3 className="text-base font-semibold font-heading text-foreground mb-4">Weekly Sales</h3>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={dailySalesData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsla(0, 0%, 100%, 0.05)" />
-              <XAxis dataKey="day" tick={{ fontSize: 12, fill: 'hsl(0, 0%, 55%)' }} stroke="hsla(0, 0%, 100%, 0.1)" />
-              <YAxis tick={{ fontSize: 12, fill: 'hsl(0, 0%, 55%)' }} stroke="hsla(0, 0%, 100%, 0.1)" />
-              <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid hsla(0, 0%, 100%, 0.1)', background: 'hsl(0, 0%, 8%)', color: 'hsl(180, 100%, 95%)', fontSize: '12px' }} />
-              <Bar dataKey="sales" fill="hsl(187, 100%, 50%)" radius={[6, 6, 0, 0]} />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsla(220, 15%, 20%, 0.3)" />
+              <XAxis dataKey="day" tick={{ fontSize: 12, fill: 'hsl(220, 10%, 50%)' }} stroke="hsla(220, 15%, 20%, 0.3)" />
+              <YAxis tick={{ fontSize: 12, fill: 'hsl(220, 10%, 50%)' }} stroke="hsla(220, 15%, 20%, 0.3)" />
+              <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid hsla(220, 15%, 20%, 0.3)', background: 'hsl(220, 18%, 7%)', color: 'hsl(45, 20%, 95%)', fontSize: '12px' }} />
+              <Bar dataKey="sales" fill="url(#barGradient)" radius={[8, 8, 0, 0]} />
+              <defs>
+                <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="hsl(160, 60%, 45%)" />
+                  <stop offset="100%" stopColor="hsl(160, 60%, 30%)" />
+                </linearGradient>
+              </defs>
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="glass-card rounded-xl p-5">
+        <div className="glass-card rounded-2xl p-6">
           <h3 className="text-base font-semibold font-heading text-foreground mb-4">Stock by Category</h3>
           {categoryData.length > 0 ? (
             <>
@@ -89,7 +100,7 @@ const Dashboard = () => {
                   <Pie data={categoryData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={3}>
                     {categoryData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ background: 'hsl(0, 0%, 8%)', border: '1px solid hsla(0, 0%, 100%, 0.1)', borderRadius: '8px', color: 'hsl(180, 100%, 95%)', fontSize: '12px' }} />
+                  <Tooltip contentStyle={{ background: 'hsl(220, 18%, 7%)', border: '1px solid hsla(220, 15%, 20%, 0.3)', borderRadius: '12px', color: 'hsl(45, 20%, 95%)', fontSize: '12px' }} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-2 mt-2">
@@ -110,7 +121,7 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <div className="glass-card rounded-xl p-5">
+      <div className="glass-card rounded-2xl p-6">
         <h3 className="text-base font-semibold font-heading text-foreground mb-4">Recent Sales</h3>
         {recentSales.length > 0 ? (
           <div className="space-y-3">
@@ -121,7 +132,7 @@ const Dashboard = () => {
                   <p className="text-xs text-muted-foreground">{sale.customer_name}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-foreground">OMR {Number(sale.total).toFixed(2)}</p>
+                  <p className="text-sm font-semibold text-foreground"><span className="text-gold">OMR</span> {Number(sale.total).toFixed(2)}</p>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                     sale.status === 'paid' ? 'bg-success/20 text-success' :
                     sale.status === 'refunded' ? 'bg-destructive/20 text-destructive' :
