@@ -1,11 +1,12 @@
-import { useState, useMemo } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, QrCode } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive } from 'lucide-react';
 import { products, categories, type Product, type CartItem, customers } from '@/data/mockData';
 import { creditCustomersAllTime } from '@/data/reportData';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
+import { saveOfflineTransaction, getOfflineTransactionCount, startBackgroundSync } from '@/lib/offlineDb';
 
 const POS = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -17,6 +18,40 @@ const POS = () => {
   const [showKhat, setShowKhat] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [lastInvoice, setLastInvoice] = useState('');
+  const [online, setOnline] = useState(navigator.onLine);
+  const [pendingSync, setPendingSync] = useState(0);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Online/offline status
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  }, []);
+
+  // Background sync engine
+  useEffect(() => {
+    const stop = startBackgroundSync(15000);
+    return stop;
+  }, []);
+
+  // Check pending sync count periodically
+  useEffect(() => {
+    const check = async () => {
+      const count = await getOfflineTransactionCount();
+      setPendingSync(count);
+    };
+    check();
+    const id = setInterval(check, 10000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Auto-focus search for barcode scanner
+  useEffect(() => {
+    searchRef.current?.focus();
+  }, []);
 
   // Bilingual fuzzy search
   const filteredProducts = useMemo(() => {
@@ -30,7 +65,7 @@ const POS = () => {
     });
   }, [searchQuery, activeCategory]);
 
-  const addToCart = (product: Product) => {
+  const addToCart = useCallback((product: Product) => {
     setCart(prev => {
       const existing = prev.find(item => item.product.id === product.id);
       if (existing) {
@@ -42,7 +77,37 @@ const POS = () => {
       }
       return [...prev, { product, quantity: 1, discount: 0 }];
     });
-  };
+  }, []);
+
+  // Barcode scanner: Enter key instantly adds exact barcode match
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const query = searchQuery.trim();
+      if (!query) return;
+      
+      // Exact barcode match first
+      const exactMatch = products.find(p => p.barcode === query);
+      if (exactMatch) {
+        addToCart(exactMatch);
+        setSearchQuery('');
+        toast.success(`✓ Scanned: ${exactMatch.name}`, { duration: 1500 });
+        return;
+      }
+      
+      // Fuzzy match - if only one result, add it
+      if (filteredProducts.length === 1) {
+        addToCart(filteredProducts[0]);
+        setSearchQuery('');
+        toast.success(`✓ Added: ${filteredProducts[0].name}`, { duration: 1500 });
+        return;
+      }
+      
+      if (filteredProducts.length === 0) {
+        toast.error('No product found for this barcode/search');
+      }
+    }
+  }, [searchQuery, filteredProducts, addToCart]);
 
   const updateQuantity = (productId: string, delta: number) => {
     setCart(prev => prev.map(item => {
@@ -64,20 +129,47 @@ const POS = () => {
   const taxAmount = (subtotal - discountAmount) * 0.05;
   const total = subtotal - discountAmount + taxAmount;
 
-  const handleCheckout = (method: string) => {
+  // Hardware placeholders
+  const kickDrawer = () => {
+    toast.success('🔓 Cash drawer opened', {
+      description: 'ESC/POS command 0x1B 0x70 sent to Epson TM-T88VII',
+      duration: 2000,
+    });
+  };
+
+  const printReceipt = () => {
+    toast.success('🖨️ Receipt printing...', {
+      description: 'Sending to thermal printer via LAN/USB',
+      duration: 2000,
+    });
+  };
+
+  const handleCheckout = async (method: string) => {
     const invoiceNo = `INV-${Date.now().toString(36).toUpperCase()}`;
     setLastInvoice(invoiceNo);
-    
-    // Generate OTA-compliant QR data
-    const qrData = JSON.stringify({
-      seller: 'NAED BHAEES',
-      vatNo: 'OM1234567890',
-      date: new Date().toISOString(),
-      total: total.toFixed(3),
-      vat: taxAmount.toFixed(3),
-      invoice: invoiceNo,
-      currency: 'OMR',
+
+    // Save to IndexedDB (offline-first)
+    await saveOfflineTransaction({
+      id: invoiceNo,
+      cart: cart.map(i => ({
+        productId: i.product.id,
+        productName: i.product.name,
+        quantity: i.quantity,
+        unitPrice: i.product.price,
+        total: i.product.price * i.quantity,
+      })),
+      customer: selectedCustomer,
+      subtotal,
+      discount: discountAmount,
+      tax: taxAmount,
+      total,
+      paymentMethod: method,
+      invoiceNo,
+      createdAt: new Date().toISOString(),
+      synced: false,
     });
+
+    if (method === 'Cash') kickDrawer();
 
     if (method === 'Credit') {
       toast.success(`Credit sale of OMR ${total.toFixed(3)} recorded for ${selectedCustomer}`, {
@@ -97,18 +189,31 @@ const POS = () => {
     <div className="flex h-screen overflow-hidden">
       {/* Left: Products */}
       <div className={cn("flex-1 flex flex-col min-w-0", showKhat && "hidden lg:flex")}>
-        {/* Search Bar - Bilingual */}
+        {/* Search Bar - Bilingual + Barcode Scanner */}
         <div className="p-4 border-b border-border/50 glass-strong">
           <div className="flex items-center gap-3">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
+                ref={searchRef}
                 type="text"
-                placeholder="Search products / البحث عن المنتجات..."
+                placeholder="Scan barcode or search / البحث عن المنتجات... ⏎"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 className="w-full pl-10 pr-4 py-2.5 rounded-lg glass border border-input text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                autoFocus
               />
+            </div>
+            {/* Connectivity Status */}
+            <div className={cn("flex items-center gap-1.5 px-3 py-2 rounded-lg glass text-xs font-medium", online ? 'text-success' : 'text-warning')}>
+              {online ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+              {online ? 'Online' : 'Offline'}
+              {pendingSync > 0 && (
+                <span className="ml-1 flex items-center gap-1 text-warning">
+                  <HardDrive className="w-3 h-3" /> {pendingSync}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -136,32 +241,29 @@ const POS = () => {
         {/* Products Grid */}
         <div className="flex-1 overflow-y-auto p-4 pos-scrollbar">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {filteredProducts.map(product => {
-              const isExpiringSoon = product.unit === 'Piece'; // placeholder for expiry logic
-              return (
-                <motion.button
-                  key={product.id}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => addToCart(product)}
-                  className="glass-card rounded-xl p-3 text-left hover:glow-cyan transition-all group"
-                >
-                  <div className="w-full aspect-square rounded-lg bg-muted/30 flex items-center justify-center mb-2 relative">
-                    <Package className="w-8 h-8 text-muted-foreground group-hover:text-primary transition-colors" />
-                    {product.stock <= product.minStock && (
-                      <span className="absolute top-1 right-1 text-[8px] px-1.5 py-0.5 rounded bg-destructive text-destructive-foreground font-bold">LOW</span>
-                    )}
-                  </div>
-                  <p className="text-xs font-medium text-foreground line-clamp-2 leading-tight">{product.name}</p>
-                  {product.nameAr && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1" dir="rtl">{product.nameAr}</p>}
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-sm font-bold text-primary text-glow">OMR {product.price.toFixed(3)}</span>
-                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded', product.stock <= product.minStock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success')}>
-                      {product.stock}
-                    </span>
-                  </div>
-                </motion.button>
-              );
-            })}
+            {filteredProducts.map(product => (
+              <motion.button
+                key={product.id}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => addToCart(product)}
+                className="glass-card rounded-xl p-3 text-left hover:glow-cyan transition-all group"
+              >
+                <div className="w-full aspect-square rounded-lg bg-muted/30 flex items-center justify-center mb-2 relative">
+                  <Package className="w-8 h-8 text-muted-foreground group-hover:text-primary transition-colors" />
+                  {product.stock <= product.minStock && (
+                    <span className="absolute top-1 right-1 text-[8px] px-1.5 py-0.5 rounded bg-destructive text-destructive-foreground font-bold">LOW</span>
+                  )}
+                </div>
+                <p className="text-xs font-medium text-foreground line-clamp-2 leading-tight">{product.name}</p>
+                {product.nameAr && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1" dir="rtl">{product.nameAr}</p>}
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-sm font-bold text-gold">OMR {product.price.toFixed(3)}</span>
+                  <span className={cn('text-[10px] px-1.5 py-0.5 rounded', product.stock <= product.minStock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success')}>
+                    {product.stock}
+                  </span>
+                </div>
+              </motion.button>
+            ))}
           </div>
           {filteredProducts.length === 0 && (
             <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">No products found</div>
@@ -193,10 +295,9 @@ const POS = () => {
                       'text-xs font-bold',
                       c.totalDebt > 50 ? 'text-destructive' : c.totalDebt > 5 ? 'text-warning' : 'text-success'
                     )}>
-                      OMR {c.totalDebt.toFixed(2)}
+                      <span className="text-gold">OMR</span> {c.totalDebt.toFixed(2)}
                     </span>
                   </div>
-                  {/* Debt Health Gauge */}
                   <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
                     <div className={cn(
                       'h-full rounded-full transition-all',
@@ -205,7 +306,13 @@ const POS = () => {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-muted-foreground">{c.phone}</span>
-                    <button className="text-[10px] text-primary hover:underline">Send Reminder</button>
+                    <a 
+                      href={`https://wa.me/${c.phone.replace('+', '')}?text=${encodeURIComponent(`Hi ${c.name}, this is a friendly reminder from NAED BHAEES. Your outstanding balance is OMR ${c.totalDebt.toFixed(3)}. Thank you!`)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] text-success hover:underline"
+                    >
+                      WhatsApp ↗
+                    </a>
                   </div>
                 </div>
               ))}
@@ -221,6 +328,13 @@ const POS = () => {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-bold font-heading text-foreground">Current Sale</h2>
             <div className="flex items-center gap-2">
+              {/* Hardware Controls */}
+              <button onClick={kickDrawer} className="p-1.5 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors" title="Open Cash Drawer (ESC/POS)">
+                <DoorOpen className="w-4 h-4" />
+              </button>
+              <button onClick={printReceipt} className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" title="Print Receipt (Epson TM-T88VII)">
+                <Printer className="w-4 h-4" />
+              </button>
               <button 
                 onClick={() => setShowKhat(!showKhat)}
                 className={cn('p-1.5 rounded-lg transition-colors', showKhat ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground')}
@@ -260,14 +374,14 @@ const POS = () => {
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <ShoppingCart className="w-12 h-12 mb-3 opacity-20" />
               <p className="text-sm">Cart is empty</p>
-              <p className="text-xs mt-1">Add products to start a sale</p>
+              <p className="text-xs mt-1">Scan a barcode or tap a product</p>
             </div>
           ) : (
             cart.map(item => (
               <motion.div key={item.product.id} layout initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3 p-3 rounded-lg glass">
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-foreground truncate">{item.product.name}</p>
-                  <p className="text-xs text-muted-foreground">OMR {item.product.price.toFixed(3)} × {item.quantity}</p>
+                  <p className="text-xs text-muted-foreground"><span className="text-gold">OMR</span> {item.product.price.toFixed(3)} × {item.quantity}</p>
                 </div>
                 <div className="flex items-center gap-1">
                   <button onClick={() => updateQuantity(item.product.id, -1)} className="w-6 h-6 rounded glass flex items-center justify-center hover:bg-primary/10 transition-colors">
@@ -278,7 +392,7 @@ const POS = () => {
                     <Plus className="w-3 h-3 text-foreground" />
                   </button>
                 </div>
-                <p className="text-xs font-bold text-foreground w-16 text-right">OMR {(item.product.price * item.quantity).toFixed(3)}</p>
+                <p className="text-xs font-bold text-gold w-16 text-right">OMR {(item.product.price * item.quantity).toFixed(3)}</p>
                 <button onClick={() => removeFromCart(item.product.id)} className="text-destructive/60 hover:text-destructive transition-colors">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -323,7 +437,7 @@ const POS = () => {
             <div className="space-y-1.5 text-xs">
               <div className="flex justify-between text-muted-foreground">
                 <span>Subtotal ({cart.reduce((s, i) => s + i.quantity, 0)} items)</span>
-                <span>OMR {subtotal.toFixed(3)}</span>
+                <span><span className="text-gold">OMR</span> {subtotal.toFixed(3)}</span>
               </div>
               {cartDiscount > 0 && (
                 <div className="flex justify-between text-success">
@@ -337,7 +451,7 @@ const POS = () => {
               </div>
               <div className="flex justify-between text-base font-bold text-foreground pt-2 border-t border-border/50">
                 <span>Total</span>
-                <span className="text-primary text-glow">OMR {total.toFixed(3)}</span>
+                <span className="text-gold text-glow">OMR {total.toFixed(3)}</span>
               </div>
             </div>
 
