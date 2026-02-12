@@ -13,13 +13,13 @@ const tabs = [
 
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState('store');
-  const [storeName, setStoreName] = useState('NAED BHAEES');
+  const [storeName, setStoreName] = useState('BHAEES POS');
   const [storePhone, setStorePhone] = useState('+968 99 123 456');
   const [storeAddress, setStoreAddress] = useState('Muscat, Oman');
   const [storeEmail, setStoreEmail] = useState('info@naedbhaees.com');
   const [taxRate, setTaxRate] = useState('5');
   const [currency, setCurrency] = useState('OMR');
-  const [receiptHeader, setReceiptHeader] = useState('NAED BHAEES POS');
+  const [receiptHeader, setReceiptHeader] = useState('BHAEES POS');
   const [receiptFooter, setReceiptFooter] = useState('Thank you for shopping with us! شكرا لتسوقكم معنا');
 
   const handleSave = () => toast.success('Settings saved successfully');

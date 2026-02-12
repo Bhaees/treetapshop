@@ -333,7 +333,7 @@ const POS = () => {
                     <span className="text-[10px] text-muted-foreground">{c.phone || '—'}</span>
                     {c.phone && (
                       <a 
-                        href={`https://wa.me/${c.phone.replace('+', '')}?text=${encodeURIComponent(`Hi ${c.name}, this is a friendly reminder from NAED BHAEES. Your outstanding balance is OMR ${Number(c.total_debt).toFixed(3)}. Thank you!`)}`}
+                        href={`https://wa.me/${c.phone.replace('+', '')}?text=${encodeURIComponent(`Hi ${c.name}, this is a friendly reminder from BHAEES POS. Your outstanding balance is OMR ${Number(c.total_debt).toFixed(3)}. Thank you!`)}`}
                         target="_blank" rel="noopener noreferrer"
                         className="text-[10px] text-success hover:underline"
                       >
@@ -437,7 +437,7 @@ const POS = () => {
               <p className="text-xs text-muted-foreground mb-2">OTA-Compliant VAT Receipt QR</p>
               <div className="inline-block p-3 rounded-lg bg-foreground">
                 <QRCodeSVG
-                  value={JSON.stringify({ seller: 'NAED BHAEES', vat: 'OM1234567890', invoice: lastInvoice, total: total.toFixed(3), date: new Date().toISOString() })}
+                  value={JSON.stringify({ seller: 'BHAEES POS', vat: 'OM1234567890', invoice: lastInvoice, total: total.toFixed(3), date: new Date().toISOString() })}
                   size={120}
                   bgColor="hsl(180, 100%, 95%)"
                   fgColor="hsl(0, 0%, 2%)"

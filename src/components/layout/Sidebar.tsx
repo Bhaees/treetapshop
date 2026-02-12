@@ -10,11 +10,11 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Store,
   Smartphone,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import logoIcon from '@/assets/logo-icon.png';
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -40,8 +40,8 @@ const Sidebar = () => {
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 h-16 border-b border-border/50">
-        <div className="w-9 h-9 rounded-lg gradient-cyan flex items-center justify-center flex-shrink-0 glow-cyan">
-          <Store className="w-5 h-5 text-primary-foreground" />
+        <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 glow-cyan">
+          <img src={logoIcon} alt="BHAEES POS" className="w-full h-full object-cover" />
         </div>
         <AnimatePresence>
           {!collapsed && (
@@ -51,8 +51,11 @@ const Sidebar = () => {
               exit={{ opacity: 0, width: 0 }}
               className="overflow-hidden whitespace-nowrap"
             >
-              <h1 className="text-sm font-bold font-heading text-primary text-glow tracking-tight">NAED BHAEES</h1>
-              <p className="text-[10px] text-muted-foreground tracking-widest uppercase">Point of Sale</p>
+              <h1 className="text-sm font-bold font-heading text-foreground tracking-tight">
+                <span className="text-primary">BHAEES</span>{' '}
+                <span className="text-gold">POS</span>
+              </h1>
+              <p className="text-[10px] text-muted-foreground tracking-widest uppercase">Premium Retail</p>
             </motion.div>
           )}
         </AnimatePresence>
