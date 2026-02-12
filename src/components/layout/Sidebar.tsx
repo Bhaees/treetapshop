@@ -11,37 +11,55 @@ import {
   ChevronLeft,
   ChevronRight,
   Smartphone,
+  Crown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import logoIcon from '@/assets/logo-icon.png';
+import { useStaffSession } from '@/contexts/StaffContext';
 
-const menuItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: ShoppingCart, label: 'POS Terminal', path: '/pos' },
-  { icon: Package, label: 'Inventory', path: '/products' },
-  { icon: Users, label: 'Customers', path: '/customers' },
-  { icon: Receipt, label: 'Sales', path: '/sales' },
-  { icon: BarChart3, label: 'Reports', path: '/reports' },
-  { icon: Smartphone, label: 'Owner View', path: '/owner' },
-  { icon: Settings, label: 'Settings', path: '/settings' },
+const allMenuItems = [
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/', ownerOnly: true },
+  { icon: ShoppingCart, label: 'POS Terminal', path: '/pos', ownerOnly: false },
+  { icon: Package, label: 'Inventory', path: '/products', ownerOnly: false },
+  { icon: Users, label: 'Customers', path: '/customers', ownerOnly: false },
+  { icon: Receipt, label: 'Sales', path: '/sales', ownerOnly: false },
+  { icon: BarChart3, label: 'Reports', path: '/reports', ownerOnly: true },
+  { icon: Smartphone, label: 'Owner View', path: '/owner', ownerOnly: true },
+  { icon: Settings, label: 'Settings', path: '/settings', ownerOnly: true },
 ];
 
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const { staffSession } = useStaffSession();
+
+  const isStaffOnly = staffSession?.role === 'staff';
+  const isOwner = staffSession?.role === 'owner';
+  const menuItems = isStaffOnly
+    ? allMenuItems.filter(item => !item.ownerOnly)
+    : allMenuItems;
 
   return (
     <motion.aside
       animate={{ width: collapsed ? 72 : 260 }}
       transition={{ duration: 0.2, ease: 'easeInOut' }}
-      className="h-screen flex flex-col glass-strong sticky top-0 z-40"
+      className={cn(
+        "h-screen flex flex-col glass-strong sticky top-0 z-40",
+        isOwner && "border-r-2 border-gold/30",
+        isStaffOnly && "border-r-2 border-info/30"
+      )}
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 h-16 border-b border-border/50">
-        <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 glow-cyan">
+        <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 relative">
           <img src={logoIcon} alt="BHAEES POS" className="w-full h-full object-cover" />
+          {isOwner && (
+            <div className="absolute -top-0.5 -right-0.5">
+              <Crown className="w-3 h-3 text-gold" />
+            </div>
+          )}
         </div>
         <AnimatePresence>
           {!collapsed && (
@@ -55,7 +73,12 @@ const Sidebar = () => {
                 <span className="text-primary">BHAEES</span>{' '}
                 <span className="text-gold">POS</span>
               </h1>
-              <p className="text-[10px] text-muted-foreground tracking-widest uppercase">Premium Retail</p>
+              <p className={cn(
+                "text-[10px] tracking-widest uppercase",
+                isOwner ? "text-gold" : isStaffOnly ? "text-info" : "text-muted-foreground"
+              )}>
+                {isOwner ? '👑 Owner Mode' : isStaffOnly ? '🔵 Staff Mode' : 'Premium Retail'}
+              </p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -72,7 +95,9 @@ const Sidebar = () => {
               className={cn(
                 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
                 isActive
-                  ? 'gradient-cyan text-primary-foreground glow-cyan-strong'
+                  ? isOwner
+                    ? 'bg-gold/20 text-gold shadow-[0_0_15px_-3px_hsl(var(--gold)/0.3)]'
+                    : 'gradient-cyan text-primary-foreground glow-cyan-strong'
                   : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
               )}
             >
@@ -94,8 +119,23 @@ const Sidebar = () => {
         })}
       </nav>
 
-      {/* Collapse Toggle */}
-      <div className="p-2 border-t border-border/50">
+      {/* Role Badge + Collapse Toggle */}
+      <div className="p-2 border-t border-border/50 space-y-1">
+        {staffSession && !collapsed && (
+          <div className={cn(
+            "flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium",
+            isOwner ? "bg-gold/10 text-gold" : "bg-info/10 text-info"
+          )}>
+            {isOwner && <Crown className="w-3.5 h-3.5" />}
+            <span>{staffSession.name}</span>
+            <span className={cn(
+              "text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase",
+              isOwner ? "bg-gold/20" : "bg-info/20"
+            )}>
+              {staffSession.role}
+            </span>
+          </div>
+        )}
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="w-full flex items-center justify-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors"

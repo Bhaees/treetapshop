@@ -9,6 +9,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { saveOfflineTransaction, getOfflineTransactionCount, startBackgroundSync } from '@/lib/offlineDb';
 import type { Tables } from '@/integrations/supabase/types';
 import PinLogin, { type StaffSession } from '@/components/pos/PinLogin';
+import { useStaffSession } from '@/contexts/StaffContext';
 import CameraScanner from '@/components/pos/CameraScanner';
 import { supabase } from '@/integrations/supabase/client';
 import vaultVideo from '@/assets/vault-opening.mp4';
@@ -54,7 +55,7 @@ const parseWeighBarcode = (barcode: string): { productCode: string; totalPrice: 
 };
 
 const POS = () => {
-  const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
+  const { staffSession, setStaffSession } = useStaffSession();
   const { data: dbProducts = [], isLoading: productsLoading } = useProducts();
   const { data: dbCustomers = [] } = useCustomers();
   const categories = useCategories();
