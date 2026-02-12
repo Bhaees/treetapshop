@@ -136,3 +136,20 @@ export function useStaff() {
     },
   });
 }
+
+// ========== STAFF ALERTS ==========
+export function useStaffAlerts() {
+  return useQuery({
+    queryKey: ['staff_alerts'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff_alerts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 10000, // poll every 10s for live updates
+  });
+}

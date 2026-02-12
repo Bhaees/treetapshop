@@ -3,15 +3,17 @@ import { motion } from 'framer-motion';
 import { 
   DollarSign, ShoppingCart, Users, TrendingUp, Lock, Unlock, 
   Activity, Eye, EyeOff, LogOut, Wifi, WifiOff, 
-  AlertTriangle, Smartphone, BarChart3
+  AlertTriangle, Smartphone, BarChart3, Bell, ShieldAlert
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import StatCard from '@/components/dashboard/StatCard';
-import { useTransactions, useCustomers } from '@/hooks/useSupabaseData';
+import { useTransactions, useCustomers, useStaffAlerts } from '@/hooks/useSupabaseData';
 
 const OwnerDashboard = () => {
   const { data: transactions = [] } = useTransactions();
   const { data: customers = [] } = useCustomers();
+  const { data: staffAlerts = [] } = useStaffAlerts();
+  const unreadAlerts = staffAlerts.filter(a => !a.is_read);
 
   const [isVaultLocked, setIsVaultLocked] = useState(true);
   const [pin, setPin] = useState('');
@@ -201,6 +203,44 @@ const OwnerDashboard = () => {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Staff Alerts */}
+      <div className="glass-card rounded-xl p-4 glow-cyan">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold font-heading text-foreground flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-destructive" />
+            Staff Alerts
+            {unreadAlerts.length > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-destructive/20 text-destructive font-bold animate-pulse">
+                {unreadAlerts.length} new
+              </span>
+            )}
+          </h3>
+        </div>
+        <div className="space-y-2 max-h-[200px] overflow-y-auto pos-scrollbar">
+          {staffAlerts.length > 0 ? staffAlerts.slice(0, 15).map((alert) => (
+            <div
+              key={alert.id}
+              className={cn(
+                'flex items-start gap-3 py-2 px-3 rounded-lg border-b border-border/30 last:border-0 transition-colors',
+                !alert.is_read ? 'bg-destructive/5' : 'hover:bg-muted/30'
+              )}
+            >
+              <Bell className={cn('w-3.5 h-3.5 mt-0.5 shrink-0', !alert.is_read ? 'text-destructive' : 'text-muted-foreground')} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-foreground">
+                  <span className="text-warning">{alert.staff_name}</span> — {alert.details}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  {new Date(alert.created_at).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          )) : (
+            <div className="text-center py-4 text-xs text-muted-foreground">No alerts — staff is behaving 👍</div>
+          )}
+        </div>
       </div>
 
       {/* Remote Controls */}
