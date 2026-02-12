@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { Search, Plus, Edit, Trash2, User, Phone, Mail, MapPin } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen } from 'lucide-react';
 import { customers as initialCustomers, type Customer } from '@/data/mockData';
+import { creditCustomersAllTime } from '@/data/reportData';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const Customers = () => {
@@ -13,14 +15,19 @@ const Customers = () => {
 
   const totalBalance = customersList.reduce((sum, c) => sum + c.balance, 0);
 
+  // Merge credit data for display
+  const creditMap = new Map(creditCustomersAllTime.map(c => [c.name.toLowerCase(), c]));
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Customers</h1>
-          <p className="text-sm text-muted-foreground">{customersList.length} customers · Outstanding Balance: AED {totalBalance.toFixed(2)}</p>
+          <h1 className="text-2xl font-bold font-heading text-foreground">
+            <span className="text-primary text-glow">Customers</span>
+          </h1>
+          <p className="text-sm text-muted-foreground">{customersList.length} customers · Outstanding: OMR {totalBalance.toFixed(3)}</p>
         </div>
-        <button onClick={() => toast.info('Add customer form coming soon')} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity">
+        <button onClick={() => toast.info('Add customer form coming soon')} className="flex items-center gap-2 px-4 py-2 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
           <Plus className="w-4 h-4" /> Add Customer
         </button>
       </div>
@@ -32,47 +39,74 @@ const Customers = () => {
           placeholder="Search by name or phone..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-card border border-input text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          className="w-full pl-10 pr-4 py-2.5 rounded-lg glass border border-input text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map(customer => (
-          <div key={customer.id} className="bg-card rounded-xl border border-border p-5 shadow-sm hover:shadow-md transition-shadow animate-fade-in">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <User className="w-5 h-5 text-primary" />
+        {filtered.map(customer => {
+          const credit = creditMap.get(customer.name.toLowerCase());
+          const debtLevel = customer.balance > 50 ? 'red' : customer.balance > 5 ? 'yellow' : 'green';
+          
+          return (
+            <div key={customer.id} className="glass-card rounded-xl p-5 hover:glow-cyan transition-all animate-fade-in">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full gradient-cyan flex items-center justify-center">
+                    <User className="w-5 h-5 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-foreground">{customer.name}</h3>
+                    <p className="text-xs text-muted-foreground">Since {new Date(customer.createdAt).toLocaleDateString()}</p>
+                  </div>
                 </div>
+                <div className="flex gap-1">
+                  <button className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground"><Edit className="w-4 h-4" /></button>
+                  <button className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              </div>
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" />{customer.phone}</div>
+                {customer.email && <div className="flex items-center gap-2"><Mail className="w-3.5 h-3.5" />{customer.email}</div>}
+                {customer.address && <div className="flex items-center gap-2"><MapPin className="w-3.5 h-3.5" />{customer.address}</div>}
+              </div>
+              
+              {/* Debt Health Gauge */}
+              {customer.balance > 0 && (
+                <div className="mt-3 pt-3 border-t border-border/30">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-muted-foreground flex items-center gap-1"><BookOpen className="w-3 h-3" /> Khat Balance</span>
+                    <span className={cn(
+                      'font-bold',
+                      debtLevel === 'red' ? 'text-destructive' : debtLevel === 'yellow' ? 'text-warning' : 'text-success'
+                    )}>
+                      OMR {customer.balance.toFixed(3)}
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className={cn(
+                      'h-full rounded-full transition-all',
+                      debtLevel === 'red' ? 'debt-gauge-red' : debtLevel === 'yellow' ? 'debt-gauge-yellow' : 'debt-gauge-green'
+                    )} style={{ width: `${Math.min((customer.balance / 300) * 100, 100)}%` }} />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/30">
                 <div>
-                  <h3 className="font-semibold text-card-foreground">{customer.name}</h3>
-                  <p className="text-xs text-muted-foreground">Since {new Date(customer.createdAt).toLocaleDateString()}</p>
+                  <p className="text-xs text-muted-foreground">Total Purchases</p>
+                  <p className="text-sm font-semibold text-foreground">OMR {customer.totalPurchases.toFixed(3)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground">Balance</p>
+                  <p className={`text-sm font-semibold ${customer.balance > 0 ? 'text-destructive' : 'text-success'}`}>
+                    OMR {customer.balance.toFixed(3)}
+                  </p>
                 </div>
               </div>
-              <div className="flex gap-1">
-                <button className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground"><Edit className="w-4 h-4" /></button>
-                <button className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
-              </div>
             </div>
-            <div className="space-y-1.5 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" />{customer.phone}</div>
-              {customer.email && <div className="flex items-center gap-2"><Mail className="w-3.5 h-3.5" />{customer.email}</div>}
-              {customer.address && <div className="flex items-center gap-2"><MapPin className="w-3.5 h-3.5" />{customer.address}</div>}
-            </div>
-            <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
-              <div>
-                <p className="text-xs text-muted-foreground">Total Purchases</p>
-                <p className="text-sm font-semibold text-card-foreground">AED {customer.totalPurchases.toFixed(2)}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Balance</p>
-                <p className={`text-sm font-semibold ${customer.balance > 0 ? 'text-destructive' : 'text-success'}`}>
-                  AED {customer.balance.toFixed(2)}
-                </p>
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {filtered.length === 0 && (
         <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">No customers found</div>

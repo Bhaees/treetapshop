@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Download, Eye, RotateCcw, Calendar, Filter } from 'lucide-react';
+import { Search, Download, Eye, RotateCcw } from 'lucide-react';
 import { sales as initialSales, type Sale } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -21,10 +21,12 @@ const Sales = () => {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Sales History</h1>
-          <p className="text-sm text-muted-foreground">{salesList.length} transactions · Revenue: AED {totalRevenue.toFixed(2)}</p>
+          <h1 className="text-2xl font-bold font-heading text-foreground">
+            <span className="text-primary text-glow">Sales</span> History
+          </h1>
+          <p className="text-sm text-muted-foreground">{salesList.length} transactions · Revenue: OMR {totalRevenue.toFixed(3)}</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-secondary-foreground text-sm font-medium hover:bg-muted transition-colors">
+        <button className="flex items-center gap-2 px-4 py-2 rounded-lg glass text-sm font-medium text-foreground hover:bg-muted/30 transition-colors">
           <Download className="w-4 h-4" /> Export
         </button>
       </div>
@@ -37,7 +39,7 @@ const Sales = () => {
             placeholder="Search by invoice or customer..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-card border border-input text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg glass border border-input text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
         <div className="flex gap-2">
@@ -46,8 +48,8 @@ const Sales = () => {
               key={status}
               onClick={() => setStatusFilter(status)}
               className={cn(
-                'px-3 py-2 rounded-lg text-xs font-medium capitalize transition-colors',
-                statusFilter === status ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground hover:bg-muted'
+                'px-3 py-2 rounded-lg text-xs font-medium capitalize transition-all',
+                statusFilter === status ? 'gradient-cyan text-primary-foreground glow-cyan' : 'glass text-secondary-foreground hover:text-foreground'
               )}
             >
               {status}
@@ -56,11 +58,11 @@ const Sales = () => {
         </div>
       </div>
 
-      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+      <div className="glass-card rounded-xl overflow-hidden glow-cyan">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border bg-muted/50">
+              <tr className="border-b border-border/50 bg-muted/20">
                 <th className="text-left p-4 font-medium text-muted-foreground">Invoice</th>
                 <th className="text-left p-4 font-medium text-muted-foreground">Customer</th>
                 <th className="text-left p-4 font-medium text-muted-foreground">Date</th>
@@ -73,29 +75,29 @@ const Sales = () => {
             </thead>
             <tbody>
               {filtered.map(sale => (
-                <tr key={sale.id} className="border-b border-border hover:bg-muted/30 transition-colors">
+                <tr key={sale.id} className="border-b border-border/30 hover:bg-muted/10 transition-colors">
                   <td className="p-4 font-medium text-primary">{sale.invoiceNo}</td>
                   <td className="p-4 text-foreground">{sale.customerName}</td>
                   <td className="p-4 text-muted-foreground">{new Date(sale.createdAt).toLocaleDateString()}</td>
                   <td className="p-4 text-right text-muted-foreground">{sale.items.reduce((s, i) => s + i.quantity, 0)}</td>
-                  <td className="p-4 text-right font-semibold text-foreground">AED {sale.total.toFixed(2)}</td>
-                  <td className="p-4 text-center"><span className="px-2 py-1 rounded-full bg-secondary text-secondary-foreground text-xs">{sale.paymentMethod}</span></td>
+                  <td className="p-4 text-right font-semibold text-foreground">OMR {sale.total.toFixed(3)}</td>
+                  <td className="p-4 text-center"><span className="px-2 py-1 rounded-full glass text-xs">{sale.paymentMethod}</span></td>
                   <td className="p-4 text-center">
                     <span className={cn('px-2 py-1 rounded-full text-xs font-medium',
-                      sale.status === 'completed' && 'bg-success/10 text-success',
-                      sale.status === 'refunded' && 'bg-destructive/10 text-destructive',
-                      sale.status === 'pending' && 'bg-warning/10 text-warning',
+                      sale.status === 'completed' && 'bg-success/20 text-success',
+                      sale.status === 'refunded' && 'bg-destructive/20 text-destructive',
+                      sale.status === 'pending' && 'bg-warning/20 text-warning',
                     )}>
                       {sale.status}
                     </span>
                   </td>
                   <td className="p-4">
                     <div className="flex items-center justify-center gap-2">
-                      <button onClick={() => toast.info('Invoice preview coming soon')} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                      <button onClick={() => toast.info('Invoice preview coming soon')} className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground">
                         <Eye className="w-4 h-4" />
                       </button>
                       {sale.status === 'completed' && (
-                        <button onClick={() => toast.info('Refund flow coming soon')} className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive">
+                        <button onClick={() => toast.info('Refund flow coming soon')} className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive">
                           <RotateCcw className="w-4 h-4" />
                         </button>
                       )}
