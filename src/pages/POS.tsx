@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle, Scale } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle, Scale, Crown } from 'lucide-react';
 import Fuse from 'fuse.js';
 import { useProducts, useCustomers, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,8 @@ import type { Tables } from '@/integrations/supabase/types';
 import PinLogin, { type StaffSession } from '@/components/pos/PinLogin';
 import CameraScanner from '@/components/pos/CameraScanner';
 import { supabase } from '@/integrations/supabase/client';
+import vaultVideo from '@/assets/vault-opening.mp4';
+import logoIcon from '@/assets/logo-icon.png';
 
 type DbProduct = Tables<'products'>;
 type DbCustomer = Tables<'customers'>;
@@ -72,7 +74,57 @@ const POS = () => {
   const [showOwnerOverride, setShowOwnerOverride] = useState(false);
   const [overridePin, setOverridePin] = useState('');
   const [pendingCheckoutMethod, setPendingCheckoutMethod] = useState<string | null>(null);
+  const [showAdminToggle, setShowAdminToggle] = useState(false);
+  const [adminTogglePin, setAdminTogglePin] = useState('');
+  const [showVaultAnimation, setShowVaultAnimation] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Long-press logo handler for admin quick-toggle
+  const handleLogoTouchStart = useCallback(() => {
+    longPressTimer.current = setTimeout(() => {
+      setShowVaultAnimation(true);
+      // Play vault animation for 3 seconds then show PIN pad
+      setTimeout(() => {
+        setShowVaultAnimation(false);
+        setShowAdminToggle(true);
+      }, 3000);
+    }, 3000); // 3 second long press
+  }, []);
+
+  const handleLogoTouchEnd = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const handleAdminTogglePin = useCallback(async (pin: string) => {
+    const { data } = await supabase
+      .from('staff')
+      .select('id, name, role')
+      .eq('pin', pin)
+      .eq('role', 'owner')
+      .eq('is_active', true)
+      .maybeSingle();
+    
+    if (data) {
+      setStaffSession({ id: data.id, name: data.name, role: 'owner' });
+      setShowAdminToggle(false);
+      setAdminTogglePin('');
+      toast.success(`👑 Admin mode activated — Welcome, ${data.name}`, { duration: 2000 });
+      // Log the admin switch
+      supabase.from('staff_alerts').insert({
+        staff_id: data.id,
+        staff_name: data.name,
+        action: 'admin_toggle',
+        details: `Quick-switched to Admin mode via logo long-press`,
+      }).then(() => {});
+    } else {
+      toast.error('Invalid Owner PIN');
+      setAdminTogglePin('');
+    }
+  }, []);
 
   // Online/offline status
   useEffect(() => {
@@ -306,11 +358,20 @@ const POS = () => {
   const total = subtotal - discountAmount + taxAmount;
 
   // Hardware placeholders
-  const kickDrawer = () => {
+  const kickDrawer = (isSaleRelated = false) => {
     toast.success('🔓 Cash drawer opened', {
       description: 'ESC/POS command 0x1B 0x70 sent to Epson TM-T88VII',
       duration: 2000,
     });
+    // Log non-sale drawer opens for audit
+    if (!isSaleRelated && staffSession) {
+      supabase.from('staff_alerts').insert({
+        staff_id: staffSession.id,
+        staff_name: staffSession.name,
+        action: 'drawer_open_no_sale',
+        details: `Opened cash drawer without a sale (manual open)`,
+      }).then(() => {});
+    }
   };
 
   const printReceipt = () => {
@@ -385,7 +446,7 @@ const POS = () => {
       synced: false,
     });
 
-    if (method === 'Cash') kickDrawer();
+    if (method === 'Cash') kickDrawer(true);
 
     if (method === 'Credit') {
       toast.success(`Credit sale of OMR ${total.toFixed(3)} recorded for ${selectedCustomer}`, {
@@ -423,13 +484,36 @@ const POS = () => {
     );
   }
 
+  const isOwner = staffSession.role === 'owner';
+  const roleBorderClass = isOwner
+    ? 'ring-2 ring-gold/40 shadow-[0_0_30px_-5px_hsl(var(--gold)/0.3)]'
+    : 'ring-2 ring-info/40 shadow-[0_0_30px_-5px_hsl(var(--info)/0.3)]';
+
   return (
-    <div className="flex h-screen overflow-hidden">
+    <>
+    <div className={cn("flex h-screen overflow-hidden rounded-lg", roleBorderClass)}>
       {/* Left: Products */}
       <div className={cn("flex-1 flex flex-col min-w-0", showKhat && "hidden lg:flex")}>
         {/* Search Bar */}
         <div className="p-4 border-b border-border/50 glass-strong">
           <div className="flex items-center gap-3">
+            {/* Long-press logo for admin toggle */}
+            <button
+              onMouseDown={handleLogoTouchStart}
+              onMouseUp={handleLogoTouchEnd}
+              onMouseLeave={handleLogoTouchEnd}
+              onTouchStart={handleLogoTouchStart}
+              onTouchEnd={handleLogoTouchEnd}
+              className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 relative select-none"
+              title="BHAEES POS"
+            >
+              <img src={logoIcon} alt="BHAEES" className="w-full h-full object-cover" />
+              {isOwner && (
+                <div className="absolute -top-0.5 -right-0.5">
+                  <Crown className="w-3 h-3 text-gold" />
+                </div>
+              )}
+            </button>
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
@@ -453,8 +537,12 @@ const POS = () => {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg glass text-xs font-medium text-foreground">
-              <span className="text-primary">{staffSession.name}</span>
+            <div className={cn("flex items-center gap-2 px-3 py-2 rounded-lg glass text-xs font-medium text-foreground", isOwner ? 'ring-1 ring-gold/30' : 'ring-1 ring-info/30')}>
+              {isOwner && <Crown className="w-3 h-3 text-gold" />}
+              <span className={isOwner ? 'text-gold' : 'text-info'}>{staffSession.name}</span>
+              <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider", isOwner ? 'bg-gold/20 text-gold' : 'bg-info/20 text-info')}>
+                {staffSession.role}
+              </span>
               <button onClick={handleLogout} className="text-muted-foreground hover:text-destructive transition-colors" title="Logout">
                 <LogOut className="w-3.5 h-3.5" />
               </button>
@@ -597,7 +685,7 @@ const POS = () => {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-bold font-heading text-foreground">Current Sale</h2>
             <div className="flex items-center gap-2">
-              <button onClick={kickDrawer} className="p-1.5 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors" title="Open Cash Drawer (ESC/POS)">
+              <button onClick={() => kickDrawer(false)} className="p-1.5 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors" title="Open Cash Drawer (ESC/POS)">
                 <DoorOpen className="w-4 h-4" />
               </button>
               <button onClick={printReceipt} className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" title="Print Receipt (Epson TM-T88VII)">
@@ -815,6 +903,106 @@ const POS = () => {
         )}
       </AnimatePresence>
     </div>
+
+    {/* Vault Opening Animation Overlay */}
+    <AnimatePresence>
+      {showVaultAnimation && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black"
+        >
+          <video
+            src={vaultVideo}
+            autoPlay
+            muted
+            playsInline
+            className="w-full h-full object-cover"
+          />
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1 }}
+            className="absolute bottom-12 text-center"
+          >
+            <p className="text-gold text-lg font-bold font-heading text-glow tracking-widest">OWNER ACCESS</p>
+            <p className="text-muted-foreground text-xs mt-1">Authenticating...</p>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+
+    {/* Admin Quick-Toggle PIN Pad */}
+    <AnimatePresence>
+      {showAdminToggle && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-background/90 backdrop-blur-lg"
+        >
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            className="glass-card rounded-2xl p-8 w-full max-w-xs mx-4 text-center space-y-5 ring-2 ring-gold/30 shadow-[0_0_40px_-5px_hsl(var(--gold)/0.4)]"
+          >
+            <Crown className="w-10 h-10 mx-auto text-gold" />
+            <h3 className="text-sm font-bold font-heading text-foreground">Owner Authentication</h3>
+            <p className="text-xs text-muted-foreground">Enter Owner PIN to switch to Admin mode</p>
+            <div className="flex justify-center gap-3">
+              {[0, 1, 2, 3].map(i => (
+                <motion.div
+                  key={i}
+                  animate={adminTogglePin.length > i ? { scale: [1, 1.2, 1] } : {}}
+                  className={cn(
+                    'w-12 h-12 rounded-xl border-2 flex items-center justify-center text-xl font-bold transition-all',
+                    adminTogglePin.length > i
+                      ? 'border-gold bg-gold/10 text-gold'
+                      : 'border-border/50 text-transparent'
+                  )}
+                >
+                  {adminTogglePin.length > i ? '•' : ''}
+                </motion.div>
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-2 max-w-[220px] mx-auto">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, 'del'].map((key, i) =>
+                key !== null ? (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      if (key === 'del') {
+                        setAdminTogglePin(prev => prev.slice(0, -1));
+                      } else {
+                        const newPin = adminTogglePin + key;
+                        if (newPin.length <= 4) {
+                          setAdminTogglePin(newPin);
+                          if (newPin.length === 4) {
+                            setTimeout(() => handleAdminTogglePin(newPin), 200);
+                          }
+                        }
+                      }
+                    }}
+                    className="h-12 rounded-xl glass text-base font-semibold text-foreground hover:bg-gold/10 hover:text-gold transition-all"
+                  >
+                    {key === 'del' ? '⌫' : key}
+                  </button>
+                ) : <div key={i} />
+              )}
+            </div>
+            <button
+              onClick={() => { setShowAdminToggle(false); setAdminTogglePin(''); }}
+              className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+            >
+              Cancel
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    </>
   );
 };
 
