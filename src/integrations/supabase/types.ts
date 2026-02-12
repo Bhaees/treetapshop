@@ -238,6 +238,36 @@ export type Database = {
         }
         Relationships: []
       }
+      staff: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          pin: string
+          role: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          pin: string
+          role?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          pin?: string
+          role?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       transaction_items: {
         Row: {
           barcode: string | null

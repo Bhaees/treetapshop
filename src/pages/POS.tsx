@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut } from 'lucide-react';
 import { useProducts, useCustomers, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,6 +7,9 @@ import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
 import { saveOfflineTransaction, getOfflineTransactionCount, startBackgroundSync } from '@/lib/offlineDb';
 import type { Tables } from '@/integrations/supabase/types';
+import PinLogin, { type StaffSession } from '@/components/pos/PinLogin';
+import CameraScanner from '@/components/pos/CameraScanner';
+import { supabase } from '@/integrations/supabase/client';
 
 type DbProduct = Tables<'products'>;
 type DbCustomer = Tables<'customers'>;
@@ -18,6 +21,7 @@ interface CartItem {
 }
 
 const POS = () => {
+  const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
   const { data: dbProducts = [], isLoading: productsLoading } = useProducts();
   const { data: dbCustomers = [] } = useCustomers();
   const categories = useCategories();
@@ -118,6 +122,45 @@ const POS = () => {
     }
   }, [searchQuery, filteredProducts, addToCart, dbProducts]);
 
+  // Camera scan handler — matches barcode or prompts to add new product
+  const handleCameraScan = useCallback((barcode: string) => {
+    const match = dbProducts.find(p => p.barcode === barcode);
+    if (match) {
+      addToCart(match);
+      toast.success(`✓ Scanned: ${match.name}`, { duration: 1500 });
+    } else {
+      // Product not found — offer to create
+      toast(`Barcode "${barcode}" not found`, {
+        description: 'Would you like to add a new product with this barcode?',
+        action: {
+          label: 'Add Product',
+          onClick: () => {
+            // Quick-add: create a placeholder product
+            supabase
+              .from('products')
+              .insert({
+                name: `New Product (${barcode})`,
+                barcode: barcode,
+                price: 0,
+                cost: 0,
+                stock: 0,
+                category: 'Uncategorized',
+                unit: 'piece',
+              })
+              .then(({ error }) => {
+                if (error) {
+                  toast.error('Failed to add product');
+                } else {
+                  toast.success(`Product created with barcode ${barcode}. Edit it in Products page.`);
+                }
+              });
+          },
+        },
+        duration: 8000,
+      });
+    }
+  }, [dbProducts, addToCart]);
+
   const updateQuantity = (productId: string, delta: number) => {
     setCart(prev => prev.map(item => {
       if (item.product.id === productId) {
@@ -130,7 +173,13 @@ const POS = () => {
     }));
   };
 
-  const removeFromCart = (productId: string) => setCart(prev => prev.filter(item => item.product.id !== productId));
+  const removeFromCart = (productId: string) => {
+    if (isStaffOnly) {
+      toast.error('Staff cannot remove items. Ask a manager to approve.'); 
+      return;
+    }
+    setCart(prev => prev.filter(item => item.product.id !== productId));
+  };
   const clearCart = () => { setCart([]); setCartDiscount(0); setSelectedCustomer('Walk-in Customer'); setSelectedCustomerId(null); };
 
   const subtotal = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
@@ -200,6 +249,14 @@ const POS = () => {
   // Khat customers — those with debt
   const khatCustomers = dbCustomers.filter(c => c.total_debt > 0);
 
+  // PIN gate
+  if (!staffSession) {
+    return <PinLogin onLogin={setStaffSession} />;
+  }
+
+  const isStaffOnly = staffSession.role === 'staff';
+  const handleLogout = () => { setStaffSession(null); clearCart(); };
+
   if (productsLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -231,6 +288,7 @@ const POS = () => {
                 autoFocus
               />
             </div>
+            <CameraScanner onScan={handleCameraScan} />
             <div className={cn("flex items-center gap-1.5 px-3 py-2 rounded-lg glass text-xs font-medium", online ? 'text-success' : 'text-warning')}>
               {online ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
               {online ? 'Online' : 'Offline'}
@@ -239,6 +297,12 @@ const POS = () => {
                   <HardDrive className="w-3 h-3" /> {pendingSync}
                 </span>
               )}
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg glass text-xs font-medium text-foreground">
+              <span className="text-primary">{staffSession.name}</span>
+              <button onClick={handleLogout} className="text-muted-foreground hover:text-destructive transition-colors" title="Logout">
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>
@@ -457,7 +521,11 @@ const POS = () => {
                 type="number"
                 placeholder="Discount %"
                 value={cartDiscount || ''}
-                onChange={(e) => setCartDiscount(Number(e.target.value))}
+                onChange={(e) => {
+                  if (isStaffOnly) { toast.error('Staff cannot change discount'); return; }
+                  setCartDiscount(Number(e.target.value));
+                }}
+                disabled={isStaffOnly}
                 className="flex-1 px-2 py-1.5 rounded glass text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 min={0} max={100}
               />

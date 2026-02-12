@@ -120,3 +120,19 @@ export function useCategories() {
   products?.forEach((p) => cats.add(p.category));
   return Array.from(cats);
 }
+
+// ========== STAFF ==========
+export function useStaff() {
+  return useQuery({
+    queryKey: ['staff'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
+}
