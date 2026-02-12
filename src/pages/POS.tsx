@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { useProducts, useCustomers, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -20,6 +20,25 @@ interface CartItem {
   discount: number;
 }
 
+// Category color map for product cards
+const CATEGORY_COLORS: Record<string, { bg: string; border: string; icon: string }> = {
+  'Beverages': { bg: 'bg-info/10', border: 'border-info/20', icon: 'text-info' },
+  'Dairy': { bg: 'bg-primary/10', border: 'border-primary/20', icon: 'text-primary' },
+  'Snacks': { bg: 'bg-warning/10', border: 'border-warning/20', icon: 'text-warning' },
+  'Bakery': { bg: 'bg-accent/10', border: 'border-accent/20', icon: 'text-accent' },
+  'Canned': { bg: 'bg-destructive/10', border: 'border-destructive/20', icon: 'text-destructive' },
+  'Frozen': { bg: 'bg-info/10', border: 'border-info/20', icon: 'text-info' },
+  'Cleaning': { bg: 'bg-success/10', border: 'border-success/20', icon: 'text-success' },
+  'Personal Care': { bg: 'bg-primary/10', border: 'border-primary/20', icon: 'text-primary' },
+  'Produce': { bg: 'bg-success/10', border: 'border-success/20', icon: 'text-success' },
+  'Meat': { bg: 'bg-destructive/10', border: 'border-destructive/20', icon: 'text-destructive' },
+  'Uncategorized': { bg: 'bg-muted/30', border: 'border-border/30', icon: 'text-muted-foreground' },
+};
+const DEFAULT_CAT_COLOR = { bg: 'bg-muted/20', border: 'border-border/20', icon: 'text-muted-foreground' };
+const getCatColor = (cat: string) => CATEGORY_COLORS[cat] || DEFAULT_CAT_COLOR;
+
+const MAX_DISPLAYED_PRODUCTS = 100; // Limit render for performance with large catalogs
+
 const POS = () => {
   const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
   const { data: dbProducts = [], isLoading: productsLoading } = useProducts();
@@ -38,6 +57,9 @@ const POS = () => {
   const [lastInvoice, setLastInvoice] = useState('');
   const [online, setOnline] = useState(navigator.onLine);
   const [pendingSync, setPendingSync] = useState(0);
+  const [showOwnerOverride, setShowOwnerOverride] = useState(false);
+  const [overridePin, setOverridePin] = useState('');
+  const [pendingCheckoutMethod, setPendingCheckoutMethod] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Online/offline status
@@ -68,16 +90,28 @@ const POS = () => {
 
   useEffect(() => { searchRef.current?.focus(); }, []);
 
-  // Bilingual fuzzy search
+  // Bilingual fuzzy search — capped for 40K+ catalog performance
   const filteredProducts = useMemo(() => {
-    return dbProducts.filter(p => {
+    const results = dbProducts.filter(p => {
       const q = searchQuery.toLowerCase();
-      const matchesSearch = p.name.toLowerCase().includes(q) || 
+      const matchesSearch = !q || p.name.toLowerCase().includes(q) || 
         (p.barcode && p.barcode.includes(searchQuery)) ||
         (p.name_ar && p.name_ar.includes(searchQuery));
       const matchesCategory = activeCategory === 'All Items' || p.category === activeCategory;
       return matchesSearch && matchesCategory;
     });
+    return results.slice(0, MAX_DISPLAYED_PRODUCTS);
+  }, [searchQuery, activeCategory, dbProducts]);
+
+  const totalFilteredCount = useMemo(() => {
+    return dbProducts.filter(p => {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = !q || p.name.toLowerCase().includes(q) || 
+        (p.barcode && p.barcode.includes(searchQuery)) ||
+        (p.name_ar && p.name_ar.includes(searchQuery));
+      const matchesCategory = activeCategory === 'All Items' || p.category === activeCategory;
+      return matchesSearch && matchesCategory;
+    }).length;
   }, [searchQuery, activeCategory, dbProducts]);
 
   const addToCart = useCallback((product: DbProduct) => {
@@ -210,7 +244,44 @@ const POS = () => {
     });
   };
 
-  const handleCheckout = async (method: string) => {
+  // Check for below-cost items
+  const belowCostItems = cart.filter(i => i.product.price < i.product.cost);
+  
+  const initiateCheckout = (method: string) => {
+    if (belowCostItems.length > 0 && staffSession?.role !== 'owner') {
+      // Staff/manager needs owner override for below-cost sales
+      setPendingCheckoutMethod(method);
+      setShowOwnerOverride(true);
+      toast.error('Some items are priced below cost! Owner PIN required.', { duration: 3000 });
+      return;
+    }
+    executeCheckout(method);
+  };
+
+  const handleOwnerOverride = async (pinToCheck?: string) => {
+    const pin = pinToCheck || overridePin;
+    const { data } = await supabase
+      .from('staff')
+      .select('role')
+      .eq('pin', pin)
+      .eq('role', 'owner')
+      .eq('is_active', true)
+      .maybeSingle();
+    
+    if (data) {
+      setShowOwnerOverride(false);
+      setOverridePin('');
+      if (pendingCheckoutMethod) {
+        executeCheckout(pendingCheckoutMethod);
+        setPendingCheckoutMethod(null);
+      }
+    } else {
+      toast.error('Invalid owner PIN');
+      setOverridePin('');
+    }
+  };
+
+  const executeCheckout = async (method: string) => {
     const invoiceNo = `INV-${Date.now().toString(36).toUpperCase()}`;
     setLastInvoice(invoiceNo);
 
@@ -337,33 +408,48 @@ const POS = () => {
 
         {/* Products Grid */}
         <div className="flex-1 overflow-y-auto p-4 pos-scrollbar">
+          {totalFilteredCount > MAX_DISPLAYED_PRODUCTS && (
+            <p className="text-[10px] text-muted-foreground mb-2 text-center">
+              Showing {filteredProducts.length} of {totalFilteredCount} products — search to narrow results
+            </p>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {filteredProducts.map(product => (
-              <motion.button
-                key={product.id}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => addToCart(product)}
-                className="glass-card rounded-xl p-3 text-left hover:glow-cyan transition-all group"
-              >
-                <div className="w-full aspect-square rounded-lg bg-muted/30 flex items-center justify-center mb-2 relative">
-                  <Package className="w-8 h-8 text-muted-foreground group-hover:text-primary transition-colors" />
-                  {product.stock <= product.min_stock && (
-                    <span className="absolute top-1 right-1 text-[8px] px-1.5 py-0.5 rounded bg-destructive text-destructive-foreground font-bold">LOW</span>
-                  )}
-                </div>
-                <p className="text-xs font-medium text-foreground line-clamp-2 leading-tight">{product.name}</p>
-                {product.name_ar && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1" dir="rtl">{product.name_ar}</p>}
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-sm font-bold text-gold">OMR {product.price.toFixed(3)}</span>
-                  <span className={cn('text-[10px] px-1.5 py-0.5 rounded', product.stock <= product.min_stock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success')}>
-                    {product.stock}
-                  </span>
-                </div>
-              </motion.button>
-            ))}
+            {filteredProducts.map(product => {
+              const catColor = getCatColor(product.category);
+              const isBelowCost = product.price < product.cost;
+              return (
+                <motion.button
+                  key={product.id}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => addToCart(product)}
+                  className={cn("glass-card rounded-xl p-3 text-left hover:glow-cyan transition-all group", isBelowCost && 'ring-1 ring-destructive/40')}
+                >
+                  <div className={cn("w-full aspect-[4/3] rounded-lg flex flex-col items-center justify-center mb-2 relative border", catColor.bg, catColor.border)}>
+                    <Package className={cn("w-6 h-6 transition-colors", catColor.icon, "group-hover:text-primary")} />
+                    <span className={cn("text-[8px] font-medium mt-1 uppercase tracking-wider", catColor.icon)}>{product.category}</span>
+                    {product.stock <= product.min_stock && (
+                      <span className="absolute top-1 right-1 text-[8px] px-1.5 py-0.5 rounded bg-destructive text-destructive-foreground font-bold">LOW</span>
+                    )}
+                    {isBelowCost && (
+                      <span className="absolute top-1 left-1 text-[8px] px-1.5 py-0.5 rounded bg-destructive/80 text-destructive-foreground font-bold flex items-center gap-0.5">
+                        <AlertTriangle className="w-2.5 h-2.5" /> &lt;COST
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-medium text-foreground line-clamp-2 leading-tight">{product.name}</p>
+                  {product.name_ar && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1" dir="rtl">{product.name_ar}</p>}
+                  <div className="flex items-center justify-between mt-2">
+                    <span className={cn("text-sm font-bold", isBelowCost ? 'text-destructive' : 'text-gold')}>OMR {product.price.toFixed(3)}</span>
+                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded', product.stock <= product.min_stock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success')}>
+                      {product.stock}
+                    </span>
+                  </div>
+                </motion.button>
+              );
+            })}
           </div>
           {filteredProducts.length === 0 && (
-            <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">No products found</div>
+            <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">No products found — try searching by name or barcode</div>
           )}
         </div>
       </div>
@@ -562,22 +648,91 @@ const POS = () => {
 
             {/* Payment Buttons */}
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => handleCheckout('Cash')} className="flex items-center justify-center gap-2 py-3 rounded-lg bg-success text-success-foreground hover:opacity-90 transition-opacity font-medium text-xs">
+              <button onClick={() => initiateCheckout('Cash')} className="flex items-center justify-center gap-2 py-3 rounded-lg bg-success text-success-foreground hover:opacity-90 transition-opacity font-medium text-xs">
                 <Banknote className="w-4 h-4" /> Cash
               </button>
-              <button onClick={() => handleCheckout('Card')} className="flex items-center justify-center gap-2 py-3 rounded-lg gradient-cyan text-primary-foreground hover:opacity-90 transition-opacity font-medium text-xs glow-cyan">
+              <button onClick={() => initiateCheckout('Card')} className="flex items-center justify-center gap-2 py-3 rounded-lg gradient-cyan text-primary-foreground hover:opacity-90 transition-opacity font-medium text-xs glow-cyan">
                 <CreditCard className="w-4 h-4" /> Card
               </button>
-              <button onClick={() => handleCheckout('Digital')} className="flex items-center justify-center gap-2 py-3 rounded-lg bg-info text-info-foreground hover:opacity-90 transition-opacity font-medium text-xs">
+              <button onClick={() => initiateCheckout('Digital')} className="flex items-center justify-center gap-2 py-3 rounded-lg bg-info text-info-foreground hover:opacity-90 transition-opacity font-medium text-xs">
                 <Smartphone className="w-4 h-4" /> Digital
               </button>
-              <button onClick={() => handleCheckout('Credit')} className="flex items-center justify-center gap-2 py-3 rounded-lg bg-warning text-warning-foreground hover:opacity-90 transition-opacity font-medium text-xs">
+              <button onClick={() => initiateCheckout('Credit')} className="flex items-center justify-center gap-2 py-3 rounded-lg bg-warning text-warning-foreground hover:opacity-90 transition-opacity font-medium text-xs">
                 <BookOpen className="w-4 h-4" /> Credit
               </button>
             </div>
           </div>
         )}
       </div>
+
+      {/* Owner Override Modal for Below-Cost Sales */}
+      <AnimatePresence>
+        {showOwnerOverride && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              className="glass-card rounded-2xl p-6 w-full max-w-xs mx-4 text-center space-y-4"
+            >
+              <ShieldAlert className="w-10 h-10 mx-auto text-destructive" />
+              <h3 className="text-sm font-bold font-heading text-foreground">Below-Cost Sale Detected</h3>
+              <div className="space-y-1">
+                {belowCostItems.map(i => (
+                  <p key={i.product.id} className="text-[10px] text-destructive">
+                    {i.product.name}: price OMR {i.product.price.toFixed(3)} &lt; cost OMR {Number(i.product.cost).toFixed(3)}
+                  </p>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">Enter Owner PIN to approve</p>
+              <div className="flex justify-center gap-2">
+                {[0, 1, 2, 3].map(i => (
+                  <div key={i} className={cn(
+                    'w-10 h-10 rounded-lg border-2 flex items-center justify-center text-lg font-bold',
+                    overridePin.length > i ? 'border-primary text-primary' : 'border-border text-transparent'
+                  )}>
+                    {overridePin.length > i ? '•' : ''}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 gap-2 max-w-[200px] mx-auto">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, 'del'].map((key, i) =>
+                  key !== null ? (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        if (key === 'del') {
+                          setOverridePin(prev => prev.slice(0, -1));
+                        } else {
+                          const newPin = overridePin + key;
+                          setOverridePin(newPin);
+                          if (newPin.length === 4) {
+                            setTimeout(() => handleOwnerOverride(newPin), 200);
+                          }
+                        }
+                      }}
+                      className="h-10 rounded-lg glass text-sm font-medium text-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                    >
+                      {key === 'del' ? '⌫' : key}
+                    </button>
+                  ) : <div key={i} />
+                )}
+              </div>
+              <button
+                onClick={() => { setShowOwnerOverride(false); setOverridePin(''); setPendingCheckoutMethod(null); }}
+                className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+              >
+                Cancel
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
