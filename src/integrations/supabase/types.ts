@@ -268,6 +268,44 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_alerts: {
+        Row: {
+          action: string
+          created_at: string
+          details: string | null
+          id: string
+          is_read: boolean
+          staff_id: string | null
+          staff_name: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: string | null
+          id?: string
+          is_read?: boolean
+          staff_id?: string | null
+          staff_name: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: string | null
+          id?: string
+          is_read?: boolean
+          staff_id?: string | null
+          staff_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_alerts_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transaction_items: {
         Row: {
           barcode: string | null

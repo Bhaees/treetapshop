@@ -175,7 +175,15 @@ const POS = () => {
 
   const removeFromCart = (productId: string) => {
     if (isStaffOnly) {
-      toast.error('Staff cannot remove items. Ask a manager to approve.'); 
+      const item = cart.find(i => i.product.id === productId);
+      toast.error('Staff cannot remove items. Owner has been notified.');
+      // Log alert to DB for owner
+      supabase.from('staff_alerts').insert({
+        staff_id: staffSession.id,
+        staff_name: staffSession.name,
+        action: 'delete_item',
+        details: `Tried to remove "${item?.product.name || 'Unknown'}" from cart`,
+      }).then(() => {});
       return;
     }
     setCart(prev => prev.filter(item => item.product.id !== productId));
