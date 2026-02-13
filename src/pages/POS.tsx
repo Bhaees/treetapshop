@@ -594,10 +594,19 @@ const POS = () => {
               <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider", isOwner ? 'bg-gold/20 text-gold' : 'bg-info/20 text-info')}>
                 {staffSession.role}
               </span>
-              <button onClick={handleLogout} className="text-muted-foreground hover:text-destructive transition-colors" title="Logout">
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
             </div>
+            <button
+              onClick={handleLogout}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+                "bg-destructive/15 text-destructive border border-destructive/30",
+                "hover:bg-destructive hover:text-destructive-foreground hover:scale-105 active:scale-95"
+              )}
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
           </div>
         </div>
 
