@@ -1,15 +1,26 @@
-import { useState } from 'react';
-import { Store, Receipt, Percent, Bell, Shield, Save } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Store, Receipt, Percent, Bell, Shield, Save, Users, Plus, Pencil, Trash2, Eye, EyeOff, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 const tabs = [
   { id: 'store', label: 'Store Info', icon: Store },
+  { id: 'staff', label: 'Staff & PINs', icon: Users },
   { id: 'tax', label: 'Tax & Currency', icon: Percent },
   { id: 'receipt', label: 'Receipt', icon: Receipt },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'security', label: 'Security', icon: Shield },
 ];
+
+interface StaffMember {
+  id: string;
+  name: string;
+  pin: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
 
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState('store');
@@ -21,6 +32,84 @@ const SettingsPage = () => {
   const [currency, setCurrency] = useState('OMR');
   const [receiptHeader, setReceiptHeader] = useState('BHAEES POS');
   const [receiptFooter, setReceiptFooter] = useState('Thank you for shopping with us! شكرا لتسوقكم معنا');
+
+  // Staff management state
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
+  const [formName, setFormName] = useState('');
+  const [formPin, setFormPin] = useState('');
+  const [formRole, setFormRole] = useState('staff');
+  const [formActive, setFormActive] = useState(true);
+  const [showPin, setShowPin] = useState<Record<string, boolean>>({});
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  const fetchStaff = async () => {
+    setStaffLoading(true);
+    const { data, error } = await supabase
+      .from('staff')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (!error && data) setStaffList(data);
+    setStaffLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'staff') fetchStaff();
+  }, [activeTab]);
+
+  const resetForm = () => {
+    setFormName('');
+    setFormPin('');
+    setFormRole('staff');
+    setFormActive(true);
+    setEditingStaff(null);
+    setShowForm(false);
+  };
+
+  const openEditForm = (staff: StaffMember) => {
+    setEditingStaff(staff);
+    setFormName(staff.name);
+    setFormPin(staff.pin);
+    setFormRole(staff.role);
+    setFormActive(staff.is_active);
+    setShowForm(true);
+  };
+
+  const handleSaveStaff = async () => {
+    if (!formName.trim()) return toast.error('Name is required');
+    if (formPin.length !== 4 || !/^\d{4}$/.test(formPin)) return toast.error('PIN must be exactly 4 digits');
+
+    // Check duplicate PIN
+    const duplicate = staffList.find(s => s.pin === formPin && s.id !== editingStaff?.id);
+    if (duplicate) return toast.error(`PIN already used by ${duplicate.name}`);
+
+    if (editingStaff) {
+      const { error } = await supabase
+        .from('staff')
+        .update({ name: formName.trim(), pin: formPin, role: formRole, is_active: formActive })
+        .eq('id', editingStaff.id);
+      if (error) return toast.error('Failed to update staff');
+      toast.success(`${formName} updated`);
+    } else {
+      const { error } = await supabase
+        .from('staff')
+        .insert({ name: formName.trim(), pin: formPin, role: formRole, is_active: formActive });
+      if (error) return toast.error('Failed to add staff');
+      toast.success(`${formName} added`);
+    }
+    resetForm();
+    fetchStaff();
+  };
+
+  const handleDeleteStaff = async (id: string) => {
+    const { error } = await supabase.from('staff').delete().eq('id', id);
+    if (error) return toast.error('Failed to delete staff');
+    toast.success('Staff removed');
+    setDeleteConfirm(null);
+    fetchStaff();
+  };
 
   const handleSave = () => toast.success('Settings saved successfully');
 
@@ -73,6 +162,195 @@ const SettingsPage = () => {
                   <label className="text-sm font-medium text-foreground mb-1.5 block">Address</label>
                   <input value={storeAddress} onChange={e => setStoreAddress(e.target.value)} className={inputClass} />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'staff' && (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold font-heading text-foreground">Staff & PINs</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">Manage who can access the POS terminal</p>
+                </div>
+                {!showForm && (
+                  <button
+                    onClick={() => { resetForm(); setShowForm(true); }}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    Add Staff
+                  </button>
+                )}
+              </div>
+
+              {/* Add/Edit Form */}
+              {showForm && (
+                <div className="glass rounded-xl p-5 border border-primary/20 space-y-4">
+                  <h3 className="text-sm font-bold text-foreground">
+                    {editingStaff ? `Edit: ${editingStaff.name}` : 'Register New Staff'}
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-foreground mb-1.5 block">Full Name</label>
+                      <input
+                        value={formName}
+                        onChange={e => setFormName(e.target.value)}
+                        placeholder="e.g. Ahmed"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-foreground mb-1.5 block">4-Digit PIN</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={4}
+                        value={formPin}
+                        onChange={e => setFormPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        placeholder="e.g. 5678"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-foreground mb-1.5 block">Role</label>
+                      <select value={formRole} onChange={e => setFormRole(e.target.value)} className={inputClass}>
+                        <option value="staff">Staff (Restricted)</option>
+                        <option value="owner">Owner (Full Access)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-foreground mb-1.5 block">Status</label>
+                      <select value={formActive ? 'active' : 'inactive'} onChange={e => setFormActive(e.target.value === 'active')} className={inputClass}>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive (Cannot Login)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={handleSaveStaff}
+                      className="flex items-center gap-2 px-5 py-2 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+                    >
+                      <Save className="w-4 h-4" />
+                      {editingStaff ? 'Update' : 'Register'}
+                    </button>
+                    <button
+                      onClick={resetForm}
+                      className="px-5 py-2 rounded-lg glass border border-border text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Staff List */}
+              {staffLoading ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">Loading staff...</div>
+              ) : (
+                <div className="space-y-2">
+                  {staffList.map(staff => (
+                    <div
+                      key={staff.id}
+                      className={cn(
+                        "flex items-center justify-between p-4 rounded-xl glass border transition-all",
+                        staff.is_active ? 'border-border/30' : 'border-destructive/20 opacity-60',
+                        staff.role === 'owner' && 'border-amber-500/30'
+                      )}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold",
+                          staff.role === 'owner' ? 'bg-amber-500/15 text-amber-400' : 'bg-primary/15 text-primary'
+                        )}>
+                          {staff.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-foreground">{staff.name}</span>
+                            <span className={cn(
+                              "text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider",
+                              staff.role === 'owner' ? 'bg-amber-500/20 text-amber-400' : 'bg-primary/20 text-primary'
+                            )}>
+                              {staff.role}
+                            </span>
+                            {!staff.is_active && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-destructive/20 text-destructive font-bold uppercase">
+                                Inactive
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs text-muted-foreground">PIN:</span>
+                            <span className="text-xs font-mono text-foreground tracking-widest">
+                              {showPin[staff.id] ? staff.pin : '••••'}
+                            </span>
+                            <button
+                              onClick={() => setShowPin(prev => ({ ...prev, [staff.id]: !prev[staff.id] }))}
+                              className="text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              {showPin[staff.id] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openEditForm(staff)}
+                          className="p-2 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        {deleteConfirm === staff.id ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleDeleteStaff(staff.id)}
+                              className="px-3 py-1 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirm(null)}
+                              className="px-3 py-1 rounded-lg glass text-xs text-muted-foreground"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeleteConfirm(staff.id)}
+                            className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {staffList.length === 0 && (
+                    <div className="text-center py-10 text-muted-foreground">
+                      <Users className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">No staff registered yet</p>
+                      <p className="text-xs mt-1">Click "Add Staff" to register your first team member</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Info box */}
+              <div className="glass rounded-lg p-4 border border-primary/20 mt-4">
+                <p className="text-xs text-primary font-medium mb-1">ℹ️ How POS Login Works</p>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  <li>• Each staff member has a unique <strong>4-digit PIN</strong> to log into the POS terminal</li>
+                  <li>• <strong>Owner</strong> role: Full access to all pages (Dashboard, Reports, Settings, etc.)</li>
+                  <li>• <strong>Staff</strong> role: Restricted to POS, Products, Customers, and Sales only</li>
+                  <li>• <strong>Inactive</strong> staff cannot log in until reactivated</li>
+                  <li>• All actions are logged under the staff member's name for accountability</li>
+                </ul>
               </div>
             </div>
           )}
@@ -140,7 +418,7 @@ const SettingsPage = () => {
               <h2 className="text-lg font-semibold font-heading text-foreground">Security Settings</h2>
               <div className="glass rounded-lg p-4 border border-warning/20">
                 <p className="text-xs text-warning font-medium mb-1">🔐 PIN Lock</p>
-                <p className="text-xs text-muted-foreground">Owner's Vault uses PIN: 1234. Change it below for enhanced security.</p>
+                <p className="text-xs text-muted-foreground">Manage staff PINs in the "Staff & PINs" tab. The PIN is used to authenticate on the POS terminal.</p>
               </div>
               <div className="space-y-4">
                 <div>
@@ -155,11 +433,13 @@ const SettingsPage = () => {
             </div>
           )}
 
-          <div className="mt-6 pt-4 border-t border-border/30">
-            <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2.5 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
-              <Save className="w-4 h-4" /> Save Changes
-            </button>
-          </div>
+          {activeTab !== 'staff' && (
+            <div className="mt-6 pt-4 border-t border-border/30">
+              <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2.5 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
+                <Save className="w-4 h-4" /> Save Changes
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
