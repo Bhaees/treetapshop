@@ -52,27 +52,31 @@ const OwnerDashboard = () => {
   const OWNER_WHATSAPP_NUMBERS = ['96898675132', '96876324797'];
 
   // Cash threshold alert with WhatsApp notification
+  const sendWhatsAppAlert = () => {
+    const msg = encodeURIComponent(
+      `⚠️ BHAEES POS Alert\n\nCash in drawer has reached OMR ${todayCashSales.toFixed(2)}.\nThreshold: OMR ${cashThreshold}\nTime: ${new Date().toLocaleString()}\n\nPlease clear the register.`
+    );
+    // Open first number directly (won't be blocked since it's a user gesture)
+    window.location.href = `https://wa.me/${OWNER_WHATSAPP_NUMBERS[0]}?text=${msg}`;
+    // Open second number after a short delay
+    if (OWNER_WHATSAPP_NUMBERS.length > 1) {
+      setTimeout(() => {
+        window.open(`https://wa.me/${OWNER_WHATSAPP_NUMBERS[1]}?text=${msg}`, '_blank');
+      }, 1000);
+    }
+  };
+
   useEffect(() => {
     if (todayCashSales >= cashThreshold && !cashAlertSent) {
       setCashAlertSent(true);
       toast.warning(`⚠️ Cash in drawer has reached OMR ${todayCashSales.toFixed(2)} — exceeds threshold of OMR ${cashThreshold}`, {
-        duration: 10000,
-        description: 'Consider clearing the register.',
+        duration: 15000,
+        description: 'Consider clearing the register. Tap the button to notify via WhatsApp.',
         action: {
           label: 'Notify via WhatsApp',
-          onClick: () => {
-            const msg = encodeURIComponent(
-              `⚠️ BHAEES POS Alert\n\nCash in drawer has reached OMR ${todayCashSales.toFixed(2)}.\nThreshold: OMR ${cashThreshold}\nTime: ${new Date().toLocaleString()}\n\nPlease clear the register.`
-            );
-            OWNER_WHATSAPP_NUMBERS.forEach(num => window.open(`https://wa.me/${num}?text=${msg}`, '_blank'));
-          },
+          onClick: sendWhatsAppAlert,
         },
       });
-      // Auto-open WhatsApp notification to all owners
-      const msg = encodeURIComponent(
-        `⚠️ BHAEES POS Alert\n\nCash in drawer has reached OMR ${todayCashSales.toFixed(2)}.\nThreshold: OMR ${cashThreshold}\nTime: ${new Date().toLocaleString()}\n\nPlease clear the register.`
-      );
-      OWNER_WHATSAPP_NUMBERS.forEach(num => window.open(`https://wa.me/${num}?text=${msg}`, '_blank'));
       // Log alert
       supabase.from('staff_alerts').insert({
         staff_name: 'System',
