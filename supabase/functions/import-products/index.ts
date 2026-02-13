@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
 
       if (error) {
         console.error(`Batch ${Math.floor(i / BATCH_SIZE)} error:`, error);
-        errors.push(`Batch ${Math.floor(i / BATCH_SIZE)}: ${error.message}`);
+        errors.push(`Batch ${Math.floor(i / BATCH_SIZE)}: Failed to import products`);
         skipped += rows.length;
       } else {
         inserted += rows.length;
@@ -101,8 +101,8 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("Import error:", err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error("[import-products] Internal error:", err);
+    return new Response(JSON.stringify({ error: "Failed to import products. Please check your data format and try again." }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
