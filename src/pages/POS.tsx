@@ -506,7 +506,43 @@ const POS = () => {
 
   return (
     <>
-    <div className={cn("flex h-screen overflow-hidden rounded-lg", roleBorderClass)}>
+    <div className={cn("flex h-screen overflow-hidden rounded-lg flex-col", roleBorderClass)}>
+      {/* ═══ MODE BANNER ═══ */}
+      <motion.div
+        initial={{ y: -40 }}
+        animate={{ y: 0 }}
+        className={cn(
+          "flex items-center justify-center gap-3 py-1.5 text-xs font-bold tracking-[0.25em] uppercase select-none relative overflow-hidden shrink-0",
+          isOwner
+            ? "bg-gradient-to-r from-gold/30 via-gold/20 to-gold/30 text-gold border-b border-gold/30"
+            : "bg-gradient-to-r from-info/20 via-info/10 to-info/20 text-info border-b border-info/20"
+        )}
+      >
+        {/* Animated shimmer */}
+        <motion.div
+          animate={{ x: ['-100%', '200%'] }}
+          transition={{ repeat: Infinity, duration: 3, ease: 'linear' }}
+          className={cn(
+            "absolute inset-y-0 w-1/3 opacity-20",
+            isOwner ? "bg-gradient-to-r from-transparent via-gold to-transparent" : "bg-gradient-to-r from-transparent via-info to-transparent"
+          )}
+        />
+        {isOwner ? (
+          <>
+            <Crown className="w-4 h-4" />
+            <span>Admin Mode — Full Access</span>
+            <Crown className="w-4 h-4" />
+          </>
+        ) : (
+          <>
+            <ShieldAlert className="w-4 h-4" />
+            <span>Staff Mode — Restricted Access</span>
+            <ShieldAlert className="w-4 h-4" />
+          </>
+        )}
+      </motion.div>
+
+      <div className="flex flex-1 overflow-hidden">
       {/* Left: Products */}
       <div className={cn("flex-1 flex flex-col min-w-0", showKhat && "hidden lg:flex")}>
         {/* Search Bar */}
@@ -868,7 +904,8 @@ const POS = () => {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </div> {/* end flex-1 wrapper */}
+    </div> {/* end main container */}
 
     {/* Vault Opening Animation Overlay */}
     <AnimatePresence>
