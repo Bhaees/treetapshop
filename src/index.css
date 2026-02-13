@@ -277,4 +277,12 @@
     height: 1px;
     background: linear-gradient(90deg, transparent, hsla(var(--glass-border), 0.4), transparent);
   }
+
+  /* Safe area for mobile notches & bottom bars */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
 }
