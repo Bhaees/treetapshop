@@ -11,6 +11,7 @@ import type { Tables } from '@/integrations/supabase/types';
 import PinLogin, { type StaffSession } from '@/components/pos/PinLogin';
 import { useStaffSession } from '@/contexts/StaffContext';
 import CameraScanner from '@/components/pos/CameraScanner';
+import ProductGrid from '@/components/pos/ProductGrid';
 import { supabase } from '@/integrations/supabase/client';
 import vaultVideo from '@/assets/vault-opening.mp4';
 import logoIcon from '@/assets/logo-icon.png';
@@ -41,7 +42,8 @@ const CATEGORY_COLORS: Record<string, { bg: string; border: string; icon: string
 const DEFAULT_CAT_COLOR = { bg: 'bg-muted/20', border: 'border-border/20', icon: 'text-muted-foreground' };
 const getCatColor = (cat: string) => CATEGORY_COLORS[cat] || DEFAULT_CAT_COLOR;
 
-const MAX_DISPLAYED_PRODUCTS = 100; // Limit render for performance with large catalogs
+const COLUMNS = { sm: 2, md: 3, lg: 4, xl: 5 };
+const ROW_HEIGHT = 210; // approximate card height in px
 
 // Parse Price-Embedded Barcodes (Prefix 20) — CAS CL5200 scale format
 // Format: 20PPPPPVVVVVC where P=product code (5 digits), V=price (5 digits, 3 decimal), C=check
@@ -168,44 +170,27 @@ const POS = () => {
     minMatchCharLength: 2,
   }), [dbProducts]);
 
-  // Bilingual fuzzy search — capped for 40K+ catalog performance
+  // Bilingual fuzzy search — no cap, virtual scrolling handles rendering
   const filteredProducts = useMemo(() => {
-    let results: DbProduct[];
     const q = searchQuery.trim();
 
-    if (!q) {
-      results = activeCategory === 'All Items'
-        ? dbProducts
-        : dbProducts.filter(p => p.category === activeCategory);
-    } else {
-      const exactBarcode = dbProducts.find(p => p.barcode === q);
-      if (exactBarcode) {
-        results = [exactBarcode];
-      } else {
-        const fuseResults = fuse.search(q);
-        results = fuseResults.map(r => r.item);
-        if (activeCategory !== 'All Items') {
-          results = results.filter(p => p.category === activeCategory);
-        }
-      }
-    }
-    return results.slice(0, MAX_DISPLAYED_PRODUCTS);
-  }, [searchQuery, activeCategory, dbProducts, fuse]);
-
-  const totalFilteredCount = useMemo(() => {
-    const q = searchQuery.trim();
     if (!q) {
       return activeCategory === 'All Items'
-        ? dbProducts.length
-        : dbProducts.filter(p => p.category === activeCategory).length;
+        ? dbProducts
+        : dbProducts.filter(p => p.category === activeCategory);
     }
+
+    // Exact barcode match first
     const exactBarcode = dbProducts.find(p => p.barcode === q);
-    if (exactBarcode) return 1;
-    let results = fuse.search(q).map(r => r.item);
+    if (exactBarcode) return [exactBarcode];
+
+    // Fuzzy search
+    const fuseResults = fuse.search(q);
+    let results = fuseResults.map(r => r.item);
     if (activeCategory !== 'All Items') {
       results = results.filter(p => p.category === activeCategory);
     }
-    return results.length;
+    return results;
   }, [searchQuery, activeCategory, dbProducts, fuse]);
 
   const addToCart = useCallback((product: DbProduct) => {
@@ -243,7 +228,7 @@ const POS = () => {
     toast.success(`⚖️ ${product.name}: ${weight.toFixed(3)} kg = OMR ${totalPrice.toFixed(3)}`, { duration: 2000 });
   }, []);
 
-  // Process barcode: prefix-20 weigh barcodes + regular
+  // Process barcode: prefix-20 weigh barcodes + regular + name fallback
   const processBarcodeInput = useCallback((barcode: string): boolean => {
     const weighed = parseWeighBarcode(barcode);
     if (weighed) {
@@ -257,14 +242,29 @@ const POS = () => {
       toast.error(`Weighed barcode: product code "${weighed.productCode}" not found. Price: OMR ${weighed.totalPrice.toFixed(3)}`);
       return true;
     }
+    // Exact barcode match
     const exactMatch = dbProducts.find(p => p.barcode === barcode);
     if (exactMatch) {
       addToCart(exactMatch);
       toast.success(`✓ Scanned: ${exactMatch.name}`, { duration: 1500 });
       return true;
     }
+    // Fallback: try exact name match (case-insensitive)
+    const nameMatch = dbProducts.find(p => p.name.toLowerCase() === barcode.toLowerCase());
+    if (nameMatch) {
+      addToCart(nameMatch);
+      toast.success(`✓ Found by name: ${nameMatch.name}`, { duration: 1500 });
+      return true;
+    }
+    // Fallback: fuzzy search — if exactly one strong match, add it
+    const fuseHits = fuse.search(barcode, { limit: 3 });
+    if (fuseHits.length === 1 && (fuseHits[0].score ?? 1) < 0.2) {
+      addToCart(fuseHits[0].item);
+      toast.success(`✓ Best match: ${fuseHits[0].item.name}`, { duration: 1500 });
+      return true;
+    }
     return false;
-  }, [dbProducts, addToCart, addWeighedItem]);
+  }, [dbProducts, addToCart, addWeighedItem, fuse]);
 
   // Barcode scanner: Enter key
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -571,63 +571,8 @@ const POS = () => {
           </div>
         </div>
 
-        {/* Products Grid */}
-        <div className="flex-1 overflow-y-auto p-4 pos-scrollbar">
-          {totalFilteredCount > MAX_DISPLAYED_PRODUCTS && (
-            <p className="text-[10px] text-muted-foreground mb-2 text-center">
-              Showing {filteredProducts.length} of {totalFilteredCount} products — search to narrow results
-            </p>
-          )}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {filteredProducts.map(product => {
-              const catColor = getCatColor(product.category);
-              const isBelowCost = product.price < product.cost;
-              return (
-                <motion.button
-                  key={product.id}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => addToCart(product)}
-                  className={cn("glass-card rounded-xl p-3 text-left hover:glow-cyan transition-all group", isBelowCost && 'ring-1 ring-destructive/40')}
-                >
-                  <div className={cn("w-full aspect-[4/3] rounded-lg flex flex-col items-center justify-center mb-2 relative border overflow-hidden", catColor.bg, catColor.border)}>
-                    {product.image_url ? (
-                      <img src={product.image_url} alt={product.name} className="w-full h-full object-cover absolute inset-0" />
-                    ) : (
-                      <>
-                        <Package className={cn("w-6 h-6 transition-colors", catColor.icon, "group-hover:text-primary")} />
-                        <span className={cn("text-[8px] font-medium mt-1 uppercase tracking-wider", catColor.icon)}>{product.category}</span>
-                      </>
-                    )}
-                    {product.is_weighted && (
-                      <span className="absolute bottom-1 right-1 text-[8px] px-1.5 py-0.5 rounded bg-info/20 text-info font-bold flex items-center gap-0.5">
-                        <Scale className="w-2.5 h-2.5" /> KG
-                      </span>
-                    )}
-                    {product.stock <= product.min_stock && (
-                      <span className="absolute top-1 right-1 text-[8px] px-1.5 py-0.5 rounded bg-destructive text-destructive-foreground font-bold">LOW</span>
-                    )}
-                    {isBelowCost && (
-                      <span className="absolute top-1 left-1 text-[8px] px-1.5 py-0.5 rounded bg-destructive/80 text-destructive-foreground font-bold flex items-center gap-0.5">
-                        <AlertTriangle className="w-2.5 h-2.5" /> &lt;COST
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs font-medium text-foreground line-clamp-2 leading-tight">{product.name}</p>
-                  {product.name_ar && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1" dir="rtl">{product.name_ar}</p>}
-                  <div className="flex items-center justify-between mt-2">
-                    <span className={cn("text-sm font-bold", isBelowCost ? 'text-destructive' : 'text-gold')}>OMR {product.price.toFixed(3)}</span>
-                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded', product.stock <= product.min_stock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success')}>
-                      {product.stock}
-                    </span>
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
-          {filteredProducts.length === 0 && (
-            <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">No products found — try searching by name or barcode</div>
-          )}
-        </div>
+        {/* Products Grid — Virtual Scrolling */}
+        <ProductGrid products={filteredProducts} addToCart={addToCart} />
       </div>
 
       {/* Digital Khat Sidebar */}
