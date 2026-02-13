@@ -547,12 +547,12 @@ const POS = () => {
         )}
       </motion.div>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
       {/* Left: Products */}
       <div className={cn("flex-1 flex flex-col min-w-0", showKhat && "hidden lg:flex")}>
         {/* Search Bar */}
-        <div className="p-4 border-b border-border/50 glass-strong">
-          <div className="flex items-center gap-3">
+        <div className="p-2 sm:p-4 border-b border-border/50 glass-strong">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             {/* Long-press logo for admin toggle */}
             <button
               onMouseDown={handleLogoTouchStart}
@@ -584,7 +584,7 @@ const POS = () => {
               />
             </div>
             <CameraScanner onScan={handleCameraScan} />
-            <div className={cn("flex items-center gap-1.5 px-3 py-2 rounded-lg glass text-xs font-medium", online ? 'text-success' : 'text-warning')}>
+            <div className={cn("hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-lg glass text-xs font-medium", online ? 'text-success' : 'text-warning')}>
               {online ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
               {online ? 'Online' : 'Offline'}
               {pendingSync > 0 && (
@@ -593,7 +593,7 @@ const POS = () => {
                 </span>
               )}
             </div>
-            <div className={cn("flex items-center gap-2 px-3 py-2 rounded-lg glass text-xs font-medium text-foreground", isOwner ? 'ring-1 ring-gold/30' : 'ring-1 ring-info/30')}>
+            <div className={cn("hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg glass text-xs font-medium text-foreground", isOwner ? 'ring-1 ring-gold/30' : 'ring-1 ring-info/30')}>
               {isOwner && <Crown className="w-3 h-3 text-gold" />}
               <span className={isOwner ? 'text-gold' : 'text-info'}>{staffSession.name}</span>
               <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider", isOwner ? 'bg-gold/20 text-gold' : 'bg-info/20 text-info')}>
@@ -695,7 +695,7 @@ const POS = () => {
       </AnimatePresence>
 
       {/* Right: Cart */}
-      <div className="w-[380px] border-l border-border/50 glass-strong flex flex-col">
+      <div className="w-full md:w-[380px] border-t md:border-t-0 md:border-l border-border/50 glass-strong flex flex-col max-h-[50vh] md:max-h-none">
         {/* Cart Header */}
         <div className="p-4 border-b border-border/50">
           <div className="flex items-center justify-between mb-3">

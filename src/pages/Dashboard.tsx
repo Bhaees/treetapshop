@@ -50,7 +50,7 @@ const Dashboard = () => {
 
   return (
     <PageTransition>
-      <div className="p-6 space-y-6">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* Premium Hero Banner */}
         <ScrollReveal type="blur" duration={0.8}>
           <ParallaxScroll speed={0.15}>
@@ -58,7 +58,7 @@ const Dashboard = () => {
               <img src={heroBanner} alt="BHAEES POS" className="w-full h-full object-cover absolute inset-0" style={{ minHeight: 180 }} />
               <div className="relative z-10 p-8 flex items-center justify-between" style={{ minHeight: 180 }}>
                 <div>
-                  <h1 className="text-3xl font-bold font-heading text-foreground">
+                  <h1 className="text-xl sm:text-3xl font-bold font-heading text-foreground">
                     <span className="text-primary text-glow">BHAEES</span>{' '}
                     <span className="text-gold text-glow-gold">POS</span>
                   </h1>
@@ -74,7 +74,7 @@ const Dashboard = () => {
           </ParallaxScroll>
         </ScrollReveal>
 
-        <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StaggerContainer className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           <StaggerItem>
             <StatCard title="Total Sales" value={`OMR ${totalSales.toFixed(2)}`} change={`${transactions.length} transactions`} changeType="positive" icon={DollarSign} iconColor="gradient-cyan" />
           </StaggerItem>
@@ -89,7 +89,7 @@ const Dashboard = () => {
           </StaggerItem>
         </StaggerContainer>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
           <ScrollReveal type="fade-left" delay={0.1} className="lg:col-span-2">
             <div className="glass-card rounded-2xl p-6 glow-cyan h-full">
               <h3 className="text-base font-semibold font-heading text-foreground mb-4">Weekly Sales</h3>
