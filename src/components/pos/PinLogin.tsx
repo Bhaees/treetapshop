@@ -143,7 +143,7 @@ const PinLogin = ({ onLogin }: PinLoginProps) => {
 
         <div className="flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground">
           <Shield className="w-3 h-3" />
-          <span>Owner: 1234 • Cashier: 0000</span>
+          <span>Enter your staff PIN to continue</span>
         </div>
       </motion.div>
     </div>
