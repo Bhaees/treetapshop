@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Store, Receipt, Percent, Bell, Shield, Save, Users, Plus, Pencil, Trash2, Eye, EyeOff, UserPlus } from 'lucide-react';
+import { Store, Receipt, Percent, Bell, Shield, Save, Users, Plus, Pencil, Trash2, Eye, EyeOff, UserPlus, ClipboardList, Filter, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -7,11 +7,33 @@ import { supabase } from '@/integrations/supabase/client';
 const tabs = [
   { id: 'store', label: 'Store Info', icon: Store },
   { id: 'staff', label: 'Staff & PINs', icon: Users },
+  { id: 'activity', label: 'Activity Log', icon: ClipboardList },
   { id: 'tax', label: 'Tax & Currency', icon: Percent },
   { id: 'receipt', label: 'Receipt', icon: Receipt },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'security', label: 'Security', icon: Shield },
 ];
+
+const ACTION_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+  admin_toggle: { label: 'Admin Switch', color: 'text-amber-400 bg-amber-500/15', icon: '👑' },
+  drawer_open_no_sale: { label: 'Drawer Opened', color: 'text-orange-400 bg-orange-500/15', icon: '🗃️' },
+  register_clearance: { label: 'Register Cleared', color: 'text-red-400 bg-red-500/15', icon: '💰' },
+  cash_threshold_reached: { label: 'Cash Threshold', color: 'text-destructive bg-destructive/15', icon: '⚠️' },
+  void_item: { label: 'Item Voided', color: 'text-destructive bg-destructive/15', icon: '🚫' },
+  below_cost_sale: { label: 'Below Cost Sale', color: 'text-destructive bg-destructive/15', icon: '📉' },
+  login: { label: 'Login', color: 'text-primary bg-primary/15', icon: '🔑' },
+  sale: { label: 'Sale', color: 'text-emerald-400 bg-emerald-500/15', icon: '🧾' },
+};
+
+interface StaffAlert {
+  id: string;
+  staff_name: string;
+  staff_id: string | null;
+  action: string;
+  details: string | null;
+  is_read: boolean;
+  created_at: string;
+}
 
 interface StaffMember {
   id: string;
@@ -45,6 +67,12 @@ const SettingsPage = () => {
   const [showPin, setShowPin] = useState<Record<string, boolean>>({});
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
+  // Activity log state
+  const [activityLogs, setActivityLogs] = useState<StaffAlert[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<string>('all');
+  const [activityStaffFilter, setActivityStaffFilter] = useState<string>('all');
+
   const fetchStaff = async () => {
     setStaffLoading(true);
     const { data, error } = await supabase
@@ -55,9 +83,30 @@ const SettingsPage = () => {
     setStaffLoading(false);
   };
 
+  const fetchActivityLogs = async () => {
+    setActivityLoading(true);
+    const { data, error } = await supabase
+      .from('staff_alerts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (!error && data) setActivityLogs(data);
+    setActivityLoading(false);
+  };
+
   useEffect(() => {
     if (activeTab === 'staff') fetchStaff();
+    if (activeTab === 'activity') fetchActivityLogs();
   }, [activeTab]);
+
+  const filteredLogs = activityLogs.filter(log => {
+    if (activityFilter !== 'all' && log.action !== activityFilter) return false;
+    if (activityStaffFilter !== 'all' && log.staff_name !== activityStaffFilter) return false;
+    return true;
+  });
+
+  const uniqueStaffNames = [...new Set(activityLogs.map(l => l.staff_name))];
+  const uniqueActions = [...new Set(activityLogs.map(l => l.action))];
 
   const resetForm = () => {
     setFormName('');
@@ -355,6 +404,99 @@ const SettingsPage = () => {
             </div>
           )}
 
+          {activeTab === 'activity' && (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold font-heading text-foreground">Activity Log</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">Track all POS actions by staff members</p>
+                </div>
+                <button
+                  onClick={fetchActivityLogs}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg glass border border-border text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", activityLoading && "animate-spin")} />
+                  Refresh
+                </button>
+              </div>
+
+              {/* Filters */}
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Filter by Staff</label>
+                  <select
+                    value={activityStaffFilter}
+                    onChange={e => setActivityStaffFilter(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="all">All Staff</option>
+                    {uniqueStaffNames.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Filter by Action</label>
+                  <select
+                    value={activityFilter}
+                    onChange={e => setActivityFilter(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="all">All Actions</option>
+                    {uniqueActions.map(action => (
+                      <option key={action} value={action}>
+                        {ACTION_LABELS[action]?.label || action}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Log entries */}
+              {activityLoading ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">Loading activity...</div>
+              ) : filteredLogs.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No activity found</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                  {filteredLogs.map(log => {
+                    const meta = ACTION_LABELS[log.action] || { label: log.action, color: 'text-muted-foreground bg-muted/30', icon: '📋' };
+                    const date = new Date(log.created_at);
+                    return (
+                      <div key={log.id} className="flex items-start gap-3 p-3 rounded-xl glass border border-border/30 transition-all hover:border-border/60">
+                        <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center text-sm shrink-0", meta.color)}>
+                          {meta.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold text-foreground">{log.staff_name}</span>
+                            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider", meta.color)}>
+                              {meta.label}
+                            </span>
+                          </div>
+                          {log.details && (
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate">{log.details}</p>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-[10px] text-muted-foreground">{date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</p>
+                          <p className="text-[10px] text-muted-foreground">{date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="glass rounded-lg p-3 border border-primary/20">
+                <p className="text-xs text-primary font-medium">📊 {filteredLogs.length} entries shown</p>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'tax' && (
             <div className="space-y-5">
               <h2 className="text-lg font-semibold font-heading text-foreground">Tax & Currency Settings</h2>
@@ -433,7 +575,7 @@ const SettingsPage = () => {
             </div>
           )}
 
-          {activeTab !== 'staff' && (
+          {activeTab !== 'staff' && activeTab !== 'activity' && (
             <div className="mt-6 pt-4 border-t border-border/30">
               <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2.5 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
                 <Save className="w-4 h-4" /> Save Changes
