@@ -314,11 +314,16 @@ const POS = () => {
       action: {
         label: 'Add Product',
         onClick: () => {
+          const sanitizedBarcode = barcode.trim().substring(0, 50).replace(/[^0-9A-Za-z\-]/g, '');
+          if (!sanitizedBarcode) {
+            toast.error('Invalid barcode format');
+            return;
+          }
           supabase
             .from('products')
             .insert({
-              name: `New Product (${barcode})`,
-              barcode: barcode,
+              name: `New Product (${sanitizedBarcode})`.substring(0, 200),
+              barcode: sanitizedBarcode,
               price: 0,
               cost: 0,
               stock: 0,

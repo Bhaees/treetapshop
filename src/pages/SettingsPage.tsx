@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { staffSchema } from '@/lib/validation';
 import { Store, Receipt, Percent, Bell, Shield, Save, Users, Plus, Pencil, Trash2, Eye, EyeOff, UserPlus, ClipboardList, Filter, RefreshCw, CalendarIcon, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -145,8 +146,19 @@ const SettingsPage = () => {
   };
 
   const handleSaveStaff = async () => {
-    if (!formName.trim()) return toast.error('Name is required');
-    if (formPin.length !== 4 || !/^\d{4}$/.test(formPin)) return toast.error('PIN must be exactly 4 digits');
+    const result = staffSchema.safeParse({
+      name: formName.trim(),
+      pin: formPin,
+      role: formRole,
+      is_active: formActive,
+    });
+
+    if (!result.success) {
+      const errors = result.error.errors.map(e => e.message).join(', ');
+      return toast.error(errors);
+    }
+
+    const validData = result.data;
 
     // Check duplicate PIN
     const duplicate = staffList.find(s => s.pin === formPin && s.id !== editingStaff?.id);
@@ -155,16 +167,16 @@ const SettingsPage = () => {
     if (editingStaff) {
       const { error } = await supabase
         .from('staff')
-        .update({ name: formName.trim(), pin: formPin, role: formRole, is_active: formActive })
+        .update(validData)
         .eq('id', editingStaff.id);
       if (error) return toast.error('Failed to update staff');
-      toast.success(`${formName} updated`);
+      toast.success(`${validData.name} updated`);
     } else {
       const { error } = await supabase
         .from('staff')
-        .insert({ name: formName.trim(), pin: formPin, role: formRole, is_active: formActive });
+        .insert({ name: validData.name, pin: validData.pin, role: validData.role, is_active: validData.is_active });
       if (error) return toast.error('Failed to add staff');
-      toast.success(`${formName} added`);
+      toast.success(`${validData.name} added`);
     }
     resetForm();
     fetchStaff();
