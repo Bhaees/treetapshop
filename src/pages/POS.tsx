@@ -256,9 +256,19 @@ const POS = () => {
       toast.success(`✓ Found by name: ${nameMatch.name}`, { duration: 1500 });
       return true;
     }
-    // Fallback: fuzzy search — if exactly one strong match, add it
-    const fuseHits = fuse.search(barcode, { limit: 3 });
-    if (fuseHits.length === 1 && (fuseHits[0].score ?? 1) < 0.2) {
+    // Fallback: partial name match (scanned text contained in product name or vice versa)
+    const partialMatch = dbProducts.find(p => 
+      p.name.toLowerCase().includes(barcode.toLowerCase()) || 
+      barcode.toLowerCase().includes(p.name.toLowerCase())
+    );
+    if (partialMatch) {
+      addToCart(partialMatch);
+      toast.success(`✓ Partial match: ${partialMatch.name}`, { duration: 1500 });
+      return true;
+    }
+    // Fallback: fuzzy search — add the top match if it's strong enough
+    const fuseHits = fuse.search(barcode, { limit: 5 });
+    if (fuseHits.length > 0 && (fuseHits[0].score ?? 1) < 0.35) {
       addToCart(fuseHits[0].item);
       toast.success(`✓ Best match: ${fuseHits[0].item.name}`, { duration: 1500 });
       return true;
