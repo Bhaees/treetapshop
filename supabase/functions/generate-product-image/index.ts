@@ -47,9 +47,13 @@ Deno.serve(async (req) => {
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error("AI API error:", errorText);
+      const statusCode = aiResponse.status;
+      let userError = "AI image generation failed";
+      if (statusCode === 402) userError = "Not enough AI credits. Please top up in Settings → Workspace → Usage.";
+      if (statusCode === 429) userError = "Rate limit exceeded. Please try again in a moment.";
       return new Response(
-        JSON.stringify({ error: "AI image generation failed" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: userError }),
+        { status: statusCode, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
