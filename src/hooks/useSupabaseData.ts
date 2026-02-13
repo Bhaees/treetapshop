@@ -3,17 +3,33 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
 
 // ========== PRODUCTS ==========
+// Fetches ALL products by paginating in chunks (Supabase defaults to 1000 rows)
+async function fetchAllProducts() {
+  const PAGE_SIZE = 1000;
+  let allProducts: Tables<'products'>[] = [];
+  let from = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .order('name')
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    allProducts = allProducts.concat(data);
+    hasMore = data.length === PAGE_SIZE;
+    from += PAGE_SIZE;
+  }
+
+  return allProducts;
+}
+
 export function useProducts() {
   return useQuery({
     queryKey: ['products'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('name');
-      if (error) throw error;
-      return data;
-    },
+    queryFn: fetchAllProducts,
+    staleTime: 5 * 60 * 1000, // cache for 5 min to avoid re-fetching 14k rows
   });
 }
 
