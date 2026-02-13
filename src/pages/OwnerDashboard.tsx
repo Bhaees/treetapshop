@@ -49,7 +49,7 @@ const OwnerDashboard = () => {
       .reduce((s, t) => s + Number(t.total), 0);
   }, [transactions]);
 
-  const OWNER_WHATSAPP = '96890108756';
+  const OWNER_WHATSAPP_NUMBERS = ['96898675132', '96876324797'];
 
   // Cash threshold alert with WhatsApp notification
   useEffect(() => {
@@ -64,15 +64,15 @@ const OwnerDashboard = () => {
             const msg = encodeURIComponent(
               `⚠️ BHAEES POS Alert\n\nCash in drawer has reached OMR ${todayCashSales.toFixed(2)}.\nThreshold: OMR ${cashThreshold}\nTime: ${new Date().toLocaleString()}\n\nPlease clear the register.`
             );
-            window.open(`https://wa.me/${OWNER_WHATSAPP}?text=${msg}`, '_blank');
+            OWNER_WHATSAPP_NUMBERS.forEach(num => window.open(`https://wa.me/${num}?text=${msg}`, '_blank'));
           },
         },
       });
-      // Auto-open WhatsApp notification
+      // Auto-open WhatsApp notification to all owners
       const msg = encodeURIComponent(
         `⚠️ BHAEES POS Alert\n\nCash in drawer has reached OMR ${todayCashSales.toFixed(2)}.\nThreshold: OMR ${cashThreshold}\nTime: ${new Date().toLocaleString()}\n\nPlease clear the register.`
       );
-      window.open(`https://wa.me/${OWNER_WHATSAPP}?text=${msg}`, '_blank');
+      OWNER_WHATSAPP_NUMBERS.forEach(num => window.open(`https://wa.me/${num}?text=${msg}`, '_blank'));
       // Log alert
       supabase.from('staff_alerts').insert({
         staff_name: 'System',
