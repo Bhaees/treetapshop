@@ -7,6 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import * as XLSX from 'xlsx';
 import { useQueryClient } from '@tanstack/react-query';
+import PageTransition from '@/components/animations/PageTransition';
+import ScrollReveal from '@/components/animations/ScrollReveal';
+import StaggerContainer, { StaggerItem } from '@/components/animations/StaggerContainer';
+import { motion } from 'framer-motion';
 
 const Products = () => {
   const { data: productsList = [], isLoading } = useProducts();
@@ -159,161 +163,175 @@ const Products = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold font-heading text-foreground">
-            <span className="text-primary text-glow">Inventory</span>
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {productsList.length} products · {lowStock} low stock · Value: OMR {totalValue.toFixed(3)}
-            {nearExpiryProducts.length > 0 && <span className="text-warning ml-2">⚠ {nearExpiryProducts.length} expiring soon</span>}
-            {expiredProducts.length > 0 && <span className="text-destructive ml-2">🚫 {expiredProducts.length} expired</span>}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={generateProductImages}
-            disabled={generatingImages}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gold/20 text-gold text-sm font-medium hover:bg-gold/30 transition-colors disabled:opacity-50"
-          >
-            {generatingImages ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            {generatingImages ? `Generating ${imageGenProgress.done}/${imageGenProgress.total}...` : 'AI Images'}
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg glass text-sm font-medium text-foreground hover:bg-muted/30 transition-colors">
-            <Download className="w-4 h-4" /> Export
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            className="hidden"
-            onChange={handleImport}
-          />
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={importing}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg glass text-sm font-medium text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
-          >
-            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            {importing ? 'Importing...' : 'Import'}
-          </button>
-          <button onClick={() => toast.info('Add product form coming soon')} className="flex items-center gap-2 px-4 py-2 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
-            <Plus className="w-4 h-4" /> Add Product
-          </button>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search by name, barcode, SKU / البحث..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg glass border border-input text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-        </div>
-        <select
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-          className="px-4 py-2.5 rounded-lg glass border border-input text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          {categories.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </div>
-
-      <div className="glass-card rounded-xl overflow-hidden glow-cyan">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/50 bg-muted/20">
-                <th className="text-left p-4 font-medium text-muted-foreground">Product</th>
-                <th className="text-left p-4 font-medium text-muted-foreground">SKU</th>
-                <th className="text-left p-4 font-medium text-muted-foreground">Barcode</th>
-                <th className="text-left p-4 font-medium text-muted-foreground">Category</th>
-                <th className="text-right p-4 font-medium text-muted-foreground">Cost</th>
-                <th className="text-right p-4 font-medium text-muted-foreground">Price</th>
-                <th className="text-right p-4 font-medium text-muted-foreground">Stock</th>
-                <th className="text-center p-4 font-medium text-muted-foreground">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.slice(0, 200).map(product => {
-                const isNearExpiry = product.expiry_date && new Date(product.expiry_date) <= sevenDaysFromNow && new Date(product.expiry_date) >= now;
-                const isExpired = product.expiry_date && new Date(product.expiry_date) < now;
-                return (
-                <tr key={product.id} className={cn(
-                  "border-b border-border/30 hover:bg-muted/10 transition-colors",
-                  isExpired && "ring-2 ring-inset ring-destructive/40 bg-destructive/5",
-                  isNearExpiry && !isExpired && "ring-2 ring-inset ring-warning/40 bg-warning/5"
-                )}>
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-muted/20">
-                        {product.image_url ? (
-                          <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Package className="w-4 h-4 text-primary" />
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <span className="font-medium text-foreground">{product.name}</span>
-                        {product.name_ar && <p className="text-[10px] text-muted-foreground" dir="rtl">{product.name_ar}</p>}
-                        {isExpired && (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-destructive font-bold mt-0.5">
-                            <AlertTriangle className="w-3 h-3" /> EXPIRED {product.expiry_date}
-                          </span>
-                        )}
-                        {isNearExpiry && !isExpired && (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-warning font-bold mt-0.5">
-                            <AlertTriangle className="w-3 h-3" /> Expires {product.expiry_date}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-4 text-muted-foreground">{product.sku || '—'}</td>
-                  <td className="p-4 text-muted-foreground font-mono text-xs">{product.barcode || '—'}</td>
-                  <td className="p-4"><Badge variant="outline" className="text-xs border-border/50">{product.category}</Badge></td>
-                  <td className="p-4 text-right text-muted-foreground">OMR {product.cost.toFixed(3)}</td>
-                  <td className="p-4 text-right font-medium text-primary">OMR {product.price.toFixed(3)}</td>
-                  <td className="p-4 text-right">
-                    <span className={cn('px-2 py-1 rounded-full text-xs font-medium',
-                      product.stock <= product.min_stock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success'
-                    )}>
-                      {product.stock} {product.unit}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center justify-center gap-2">
-                      <button className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground">
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {filtered.length > 200 && (
-          <div className="flex items-center justify-center py-3 text-muted-foreground text-xs border-t border-border/30">
-            Showing 200 of {filtered.length} products. Use search to find specific items.
+    <PageTransition>
+      <div className="p-6 space-y-6">
+        <ScrollReveal type="fade-down">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold font-heading text-foreground">
+                <span className="text-primary text-glow">Inventory</span>
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {productsList.length} products · {lowStock} low stock · Value: OMR {totalValue.toFixed(3)}
+                {nearExpiryProducts.length > 0 && <span className="text-warning ml-2">⚠ {nearExpiryProducts.length} expiring soon</span>}
+                {expiredProducts.length > 0 && <span className="text-destructive ml-2">🚫 {expiredProducts.length} expired</span>}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={generateProductImages}
+                disabled={generatingImages}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gold/20 text-gold text-sm font-medium hover:bg-gold/30 transition-colors disabled:opacity-50"
+              >
+                {generatingImages ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {generatingImages ? `Generating ${imageGenProgress.done}/${imageGenProgress.total}...` : 'AI Images'}
+              </button>
+              <button className="flex items-center gap-2 px-4 py-2 rounded-lg glass text-sm font-medium text-foreground hover:bg-muted/30 transition-colors">
+                <Download className="w-4 h-4" /> Export
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleImport}
+              />
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={importing}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg glass text-sm font-medium text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+              >
+                {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                {importing ? 'Importing...' : 'Import'}
+              </button>
+              <button onClick={() => toast.info('Add product form coming soon')} className="flex items-center gap-2 px-4 py-2 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
+                <Plus className="w-4 h-4" /> Add Product
+              </button>
+            </div>
           </div>
-        )}
-        {filtered.length === 0 && (
-          <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">No products found</div>
-        )}
+        </ScrollReveal>
+
+        <ScrollReveal type="fade-up" delay={0.1}>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search by name, barcode, SKU / البحث..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg glass border border-input text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="px-4 py-2.5 rounded-lg glass border border-input text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </ScrollReveal>
+
+        <ScrollReveal type="scale" delay={0.15}>
+          <div className="glass-card rounded-xl overflow-hidden glow-cyan">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50 bg-muted/20">
+                    <th className="text-left p-4 font-medium text-muted-foreground">Product</th>
+                    <th className="text-left p-4 font-medium text-muted-foreground">SKU</th>
+                    <th className="text-left p-4 font-medium text-muted-foreground">Barcode</th>
+                    <th className="text-left p-4 font-medium text-muted-foreground">Category</th>
+                    <th className="text-right p-4 font-medium text-muted-foreground">Cost</th>
+                    <th className="text-right p-4 font-medium text-muted-foreground">Price</th>
+                    <th className="text-right p-4 font-medium text-muted-foreground">Stock</th>
+                    <th className="text-center p-4 font-medium text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.slice(0, 200).map((product, idx) => {
+                    const isNearExpiry = product.expiry_date && new Date(product.expiry_date) <= sevenDaysFromNow && new Date(product.expiry_date) >= now;
+                    const isExpired = product.expiry_date && new Date(product.expiry_date) < now;
+                    return (
+                      <motion.tr
+                        key={product.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.3, delay: Math.min(idx * 0.02, 0.6), ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
+                        className={cn(
+                          "border-b border-border/30 hover:bg-muted/10 transition-colors",
+                          isExpired && "ring-2 ring-inset ring-destructive/40 bg-destructive/5",
+                          isNearExpiry && !isExpired && "ring-2 ring-inset ring-warning/40 bg-warning/5"
+                        )}
+                      >
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0 bg-muted/20">
+                              {product.image_url ? (
+                                <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <Package className="w-4 h-4 text-primary" />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <span className="font-medium text-foreground">{product.name}</span>
+                              {product.name_ar && <p className="text-[10px] text-muted-foreground" dir="rtl">{product.name_ar}</p>}
+                              {isExpired && (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-destructive font-bold mt-0.5">
+                                  <AlertTriangle className="w-3 h-3" /> EXPIRED {product.expiry_date}
+                                </span>
+                              )}
+                              {isNearExpiry && !isExpired && (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-warning font-bold mt-0.5">
+                                  <AlertTriangle className="w-3 h-3" /> Expires {product.expiry_date}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4 text-muted-foreground">{product.sku || '—'}</td>
+                        <td className="p-4 text-muted-foreground font-mono text-xs">{product.barcode || '—'}</td>
+                        <td className="p-4"><Badge variant="outline" className="text-xs border-border/50">{product.category}</Badge></td>
+                        <td className="p-4 text-right text-muted-foreground">OMR {product.cost.toFixed(3)}</td>
+                        <td className="p-4 text-right font-medium text-primary">OMR {product.price.toFixed(3)}</td>
+                        <td className="p-4 text-right">
+                          <span className={cn('px-2 py-1 rounded-full text-xs font-medium',
+                            product.stock <= product.min_stock ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success'
+                          )}>
+                            {product.stock} {product.unit}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center justify-center gap-2">
+                            <button className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground">
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {filtered.length > 200 && (
+              <div className="flex items-center justify-center py-3 text-muted-foreground text-xs border-t border-border/30">
+                Showing 200 of {filtered.length} products. Use search to find specific items.
+              </div>
+            )}
+            {filtered.length === 0 && (
+              <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">No products found</div>
+            )}
+          </div>
+        </ScrollReveal>
       </div>
-    </div>
+    </PageTransition>
   );
 };
 
