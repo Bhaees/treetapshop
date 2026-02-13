@@ -256,15 +256,19 @@ const POS = () => {
       toast.success(`✓ Found by name: ${nameMatch.name}`, { duration: 1500 });
       return true;
     }
-    // Fallback: partial name match (scanned text contained in product name or vice versa)
-    const partialMatch = dbProducts.find(p => 
-      p.name.toLowerCase().includes(barcode.toLowerCase()) || 
-      barcode.toLowerCase().includes(p.name.toLowerCase())
-    );
-    if (partialMatch) {
-      addToCart(partialMatch);
-      toast.success(`✓ Partial match: ${partialMatch.name}`, { duration: 1500 });
-      return true;
+    // Fallback: partial name match — only if both strings are meaningful length (>=4 chars)
+    const barcodeLC = barcode.toLowerCase();
+    if (barcodeLC.length >= 4) {
+      const partialMatch = dbProducts.find(p => {
+        const nameLC = p.name.toLowerCase();
+        if (nameLC.length < 4) return false; // skip junk entries like "1", "fa", etc.
+        return nameLC.includes(barcodeLC) || barcodeLC.includes(nameLC);
+      });
+      if (partialMatch) {
+        addToCart(partialMatch);
+        toast.success(`✓ Partial match: ${partialMatch.name}`, { duration: 1500 });
+        return true;
+      }
     }
     // Fallback: fuzzy search — add the top match if it's strong enough
     const fuseHits = fuse.search(barcode, { limit: 5 });
