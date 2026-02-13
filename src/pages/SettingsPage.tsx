@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Store, Receipt, Percent, Bell, Shield, Save, Users, Plus, Pencil, Trash2, Eye, EyeOff, UserPlus, ClipboardList, Filter, RefreshCw } from 'lucide-react';
+import { Store, Receipt, Percent, Bell, Shield, Save, Users, Plus, Pencil, Trash2, Eye, EyeOff, UserPlus, ClipboardList, Filter, RefreshCw, CalendarIcon, X } from 'lucide-react';
+import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const tabs = [
   { id: 'store', label: 'Store Info', icon: Store },
@@ -72,6 +76,8 @@ const SettingsPage = () => {
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityFilter, setActivityFilter] = useState<string>('all');
   const [activityStaffFilter, setActivityStaffFilter] = useState<string>('all');
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
+  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
 
   const fetchStaff = async () => {
     setStaffLoading(true);
@@ -102,6 +108,18 @@ const SettingsPage = () => {
   const filteredLogs = activityLogs.filter(log => {
     if (activityFilter !== 'all' && log.action !== activityFilter) return false;
     if (activityStaffFilter !== 'all' && log.staff_name !== activityStaffFilter) return false;
+    if (dateFrom) {
+      const logDate = new Date(log.created_at);
+      const fromStart = new Date(dateFrom);
+      fromStart.setHours(0, 0, 0, 0);
+      if (logDate < fromStart) return false;
+    }
+    if (dateTo) {
+      const logDate = new Date(log.created_at);
+      const toEnd = new Date(dateTo);
+      toEnd.setHours(23, 59, 59, 999);
+      if (logDate > toEnd) return false;
+    }
     return true;
   });
 
@@ -452,7 +470,47 @@ const SettingsPage = () => {
                 </div>
               </div>
 
-              {/* Log entries */}
+              {/* Date Range */}
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">From Date</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal h-10", !dateFrom && "text-muted-foreground")}>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateFrom ? format(dateFrom, "dd MMM yyyy") : "Start date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={dateFrom} onSelect={setDateFrom} initialFocus className="p-3 pointer-events-auto" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">To Date</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal h-10", !dateTo && "text-muted-foreground")}>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateTo ? format(dateTo, "dd MMM yyyy") : "End date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={dateTo} onSelect={setDateTo} initialFocus className="p-3 pointer-events-auto" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                {(dateFrom || dateTo) && (
+                  <button
+                    onClick={() => { setDateFrom(undefined); setDateTo(undefined); }}
+                    className="h-10 px-3 rounded-lg glass border border-border text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Clear
+                  </button>
+                )}
+              </div>
+
               {activityLoading ? (
                 <div className="text-center py-8 text-muted-foreground text-sm">Loading activity...</div>
               ) : filteredLogs.length === 0 ? (
