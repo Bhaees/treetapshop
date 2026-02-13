@@ -205,7 +205,7 @@ const OwnerDashboard = () => {
                 value={cashThreshold}
                 onChange={(e) => setCashThreshold(Number(e.target.value))}
                 className="w-16 text-center text-lg font-bold font-heading text-warning bg-transparent focus:outline-none"
-                min={50}
+                min={1}
                 max={10000}
               />
             </div>
