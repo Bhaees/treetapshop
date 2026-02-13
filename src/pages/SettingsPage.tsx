@@ -51,9 +51,9 @@ interface StaffMember {
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState('store');
   const [storeName, setStoreName] = useState('BHAEES POS');
-  const [storePhone, setStorePhone] = useState('+968 99 123 456');
+  const [storePhone, setStorePhone] = useState('+968 9867 5132');
   const [storeAddress, setStoreAddress] = useState('Muscat, Oman');
-  const [storeEmail, setStoreEmail] = useState('info@naedbhaees.com');
+  const [storeEmail, setStoreEmail] = useState('bhaees25@gmail.com');
   const [taxRate, setTaxRate] = useState('5');
   const [currency, setCurrency] = useState('OMR');
   const [receiptHeader, setReceiptHeader] = useState('BHAEES POS');
