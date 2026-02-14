@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle, Scale, Crown } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle, Scale, Crown, PauseCircle, Play, Tag } from 'lucide-react';
 import Fuse from 'fuse.js';
 import { useProducts, useCustomers, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,8 @@ import PinLogin, { type StaffSession } from '@/components/pos/PinLogin';
 import { useStaffSession } from '@/contexts/StaffContext';
 import CameraScanner from '@/components/pos/CameraScanner';
 import ProductGrid from '@/components/pos/ProductGrid';
+import QuickAddProduct from '@/components/pos/QuickAddProduct';
+import HeldSalesPanel, { type HeldSale } from '@/components/pos/HeldSales';
 import { supabase } from '@/integrations/supabase/client';
 import vaultVideo from '@/assets/vault-opening.mp4';
 import logoIcon from '@/assets/logo-icon.png';
@@ -82,6 +84,22 @@ const POS = () => {
   const [showVaultAnimation, setShowVaultAnimation] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Quick Add Product state
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddBarcode, setQuickAddBarcode] = useState('');
+  const [quickAddName, setQuickAddName] = useState('');
+
+  // Hold/Recall Sale state
+  const [heldSales, setHeldSales] = useState<HeldSale[]>([]);
+  const [showHeldSales, setShowHeldSales] = useState(false);
+
+  // Item-level discount editing
+  const [editingItemDiscount, setEditingItemDiscount] = useState<string | null>(null);
+
+  // Quantity tap-to-edit
+  const [editingQuantity, setEditingQuantity] = useState<string | null>(null);
+  const [editQuantityValue, setEditQuantityValue] = useState('');
 
   // Long-press logo handler for admin quick-toggle
   const handleLogoTouchStart = useCallback(() => {
@@ -300,7 +318,11 @@ const POS = () => {
       }
       
       if (filteredProducts.length === 0) {
-        toast.error('No product found for this barcode/search');
+        // Open Quick Add dialog with the search term as name hint
+        setQuickAddBarcode('');
+        setQuickAddName(query);
+        setQuickAddOpen(true);
+        setSearchQuery('');
       }
     }
   }, [searchQuery, filteredProducts, addToCart, processBarcodeInput]);
@@ -309,39 +331,77 @@ const POS = () => {
   const handleCameraScan = useCallback((barcode: string) => {
     if (processBarcodeInput(barcode)) return;
 
-    toast(`Barcode "${barcode}" not found`, {
-      description: 'Would you like to add a new product with this barcode?',
-      action: {
-        label: 'Add Product',
-        onClick: () => {
-          const sanitizedBarcode = barcode.trim().substring(0, 50).replace(/[^0-9A-Za-z\-]/g, '');
-          if (!sanitizedBarcode) {
-            toast.error('Invalid barcode format');
-            return;
-          }
-          supabase
-            .from('products')
-            .insert({
-              name: `New Product (${sanitizedBarcode})`.substring(0, 200),
-              barcode: sanitizedBarcode,
-              price: 0,
-              cost: 0,
-              stock: 0,
-              category: 'Uncategorized',
-              unit: 'piece',
-            })
-            .then(({ error }) => {
-              if (error) {
-                toast.error('Failed to add product');
-              } else {
-                toast.success(`Product created with barcode ${barcode}. Edit it in Products page.`);
-              }
-            });
-        },
-      },
-      duration: 8000,
-    });
+    // Not found — open Quick Add Product dialog with prefilled barcode
+    setQuickAddBarcode(barcode);
+    setQuickAddName('');
+    setQuickAddOpen(true);
   }, [processBarcodeInput]);
+
+  // Quick add product callback — auto-add to cart
+  const handleQuickProductAdded = useCallback((product: DbProduct) => {
+    addToCart(product);
+  }, [addToCart]);
+
+  // Hold current sale
+  const holdCurrentSale = useCallback(() => {
+    if (cart.length === 0) { toast.error('Cart is empty'); return; }
+    const held: HeldSale = {
+      id: `HOLD-${Date.now()}`,
+      cart: [...cart],
+      customer: selectedCustomer,
+      customerId: selectedCustomerId,
+      heldAt: new Date().toISOString(),
+      note: '',
+    };
+    setHeldSales(prev => [...prev, held]);
+    clearCart();
+    toast.success(`Sale parked (${held.cart.length} items)`, { description: 'Tap 🔄 to recall', duration: 2000 });
+  }, [cart, selectedCustomer, selectedCustomerId]);
+
+  // Recall a held sale
+  const recallHeldSale = useCallback((sale: HeldSale) => {
+    if (cart.length > 0) {
+      // Park current cart first
+      const currentHeld: HeldSale = {
+        id: `HOLD-${Date.now()}`,
+        cart: [...cart],
+        customer: selectedCustomer,
+        customerId: selectedCustomerId,
+        heldAt: new Date().toISOString(),
+        note: '(auto-parked)',
+      };
+      setHeldSales(prev => [...prev.filter(s => s.id !== sale.id), currentHeld]);
+    } else {
+      setHeldSales(prev => prev.filter(s => s.id !== sale.id));
+    }
+    setCart(sale.cart);
+    setSelectedCustomer(sale.customer);
+    setSelectedCustomerId(sale.customerId);
+    setShowHeldSales(false);
+    toast.success(`Recalled sale for ${sale.customer}`, { duration: 1500 });
+  }, [cart, selectedCustomer, selectedCustomerId]);
+
+  const deleteHeldSale = useCallback((id: string) => {
+    setHeldSales(prev => prev.filter(s => s.id !== id));
+    toast.success('Held sale deleted');
+  }, []);
+
+  // Update item discount
+  const updateItemDiscount = useCallback((productId: string, discount: number) => {
+    setCart(prev => prev.map(item =>
+      item.product.id === productId ? { ...item, discount: Math.max(0, Math.min(100, discount)) } : item
+    ));
+  }, []);
+
+  // Set exact quantity
+  const setExactQuantity = useCallback((productId: string, qty: number) => {
+    if (qty <= 0) return;
+    setCart(prev => prev.map(item => {
+      if (item.product.id !== productId) return item;
+      if (qty > item.product.stock) { toast.error('Not enough stock'); return item; }
+      return { ...item, quantity: qty };
+    }));
+  }, []);
 
   const updateQuantity = (productId: string, delta: number) => {
     setCart(prev => prev.map(item => {
@@ -372,7 +432,11 @@ const POS = () => {
   };
   const clearCart = () => { setCart([]); setCartDiscount(0); setSelectedCustomer('Walk-in Customer'); setSelectedCustomerId(null); };
 
-  const subtotal = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+  const subtotal = cart.reduce((sum, item) => {
+    const itemTotal = item.product.price * item.quantity;
+    const itemDiscountAmt = (itemTotal * item.discount) / 100;
+    return sum + (itemTotal - itemDiscountAmt);
+  }, 0);
   const discountAmount = (subtotal * cartDiscount) / 100;
   const taxAmount = (subtotal - discountAmount) * 0.05;
   const total = subtotal - discountAmount + taxAmount;
@@ -584,6 +648,13 @@ const POS = () => {
               />
             </div>
             <CameraScanner onScan={handleCameraScan} />
+            <button
+              onClick={() => { setQuickAddBarcode(''); setQuickAddName(''); setQuickAddOpen(true); }}
+              className="p-2.5 rounded-lg glass border border-input text-muted-foreground hover:text-success hover:border-success/50 transition-all"
+              title="Quick Add New Product"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
             <div className={cn("hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-lg glass text-xs font-medium", online ? 'text-success' : 'text-warning')}>
               {online ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
               {online ? 'Online' : 'Offline'}
@@ -700,7 +771,29 @@ const POS = () => {
         <div className="p-4 border-b border-border/50">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-bold font-heading text-foreground">Current Sale</h2>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              {/* Hold Sale */}
+              <button
+                onClick={holdCurrentSale}
+                disabled={cart.length === 0}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors disabled:opacity-30"
+                title="Hold/Park Sale"
+              >
+                <PauseCircle className="w-4 h-4" />
+              </button>
+              {/* Recall Held Sales */}
+              <button
+                onClick={() => setShowHeldSales(!showHeldSales)}
+                className={cn('p-1.5 rounded-lg transition-colors relative', showHeldSales ? 'bg-success/20 text-success' : 'text-muted-foreground hover:text-success hover:bg-success/10')}
+                title={`Recall Held Sale (${heldSales.length})`}
+              >
+                <Play className="w-4 h-4" />
+                {heldSales.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-warning text-warning-foreground text-[9px] font-bold flex items-center justify-center">
+                    {heldSales.length}
+                  </span>
+                )}
+              </button>
               <button onClick={() => kickDrawer(false)} className="p-1.5 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors" title="Open Cash Drawer (ESC/POS)">
                 <DoorOpen className="w-4 h-4" />
               </button>
@@ -740,6 +833,20 @@ const POS = () => {
           </AnimatePresence>
         </div>
 
+        {/* Held Sales Panel */}
+        <AnimatePresence>
+          {showHeldSales && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-b border-border/50 overflow-hidden">
+              <HeldSalesPanel
+                heldSales={heldSales}
+                onRecall={recallHeldSale}
+                onDelete={deleteHeldSale}
+                onClose={() => setShowHeldSales(false)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Cart Items */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2 pos-scrollbar">
           {cart.length === 0 ? (
@@ -747,29 +854,98 @@ const POS = () => {
               <ShoppingCart className="w-12 h-12 mb-3 opacity-20" />
               <p className="text-sm">Cart is empty</p>
               <p className="text-xs mt-1">Scan a barcode or tap a product</p>
+              {/* Quick add product button */}
+              <button
+                onClick={() => { setQuickAddBarcode(''); setQuickAddName(''); setQuickAddOpen(true); }}
+                className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg glass text-xs text-primary hover:bg-primary/10 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add New Product
+              </button>
             </div>
           ) : (
-            cart.map(item => (
-              <motion.div key={item.product.id} layout initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3 p-3 rounded-lg glass">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-foreground truncate">{item.product.name}</p>
-                  <p className="text-xs text-muted-foreground"><span className="text-gold">OMR</span> {item.product.price.toFixed(3)} × {item.quantity}</p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => updateQuantity(item.product.id, -1)} className="w-6 h-6 rounded glass flex items-center justify-center hover:bg-primary/10 transition-colors">
-                    <Minus className="w-3 h-3 text-foreground" />
-                  </button>
-                  <span className="w-7 text-center text-xs font-semibold text-foreground">{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.product.id, 1)} className="w-6 h-6 rounded glass flex items-center justify-center hover:bg-primary/10 transition-colors">
-                    <Plus className="w-3 h-3 text-foreground" />
-                  </button>
-                </div>
-                <p className="text-xs font-bold text-gold w-16 text-right">OMR {(item.product.price * item.quantity).toFixed(3)}</p>
-                <button onClick={() => removeFromCart(item.product.id)} className="text-destructive/60 hover:text-destructive transition-colors">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </motion.div>
-            ))
+            cart.map(item => {
+              const itemTotal = item.product.price * item.quantity;
+              const itemDiscountAmt = (itemTotal * item.discount) / 100;
+              const itemFinal = itemTotal - itemDiscountAmt;
+              return (
+                <motion.div key={item.product.id} layout initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="p-3 rounded-lg glass space-y-1.5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">{item.product.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        <span className="text-gold">OMR</span> {item.product.price.toFixed(3)} × {item.quantity}
+                        {item.discount > 0 && <span className="text-success ml-1">(-{item.discount}%)</span>}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => updateQuantity(item.product.id, -1)} className="w-6 h-6 rounded glass flex items-center justify-center hover:bg-primary/10 transition-colors">
+                        <Minus className="w-3 h-3 text-foreground" />
+                      </button>
+                      {/* Tap to edit quantity */}
+                      {editingQuantity === item.product.id ? (
+                        <input
+                          type="number"
+                          className="w-10 text-center text-xs font-semibold bg-transparent border border-primary rounded px-0.5 py-0.5 text-foreground focus:outline-none"
+                          value={editQuantityValue}
+                          onChange={e => setEditQuantityValue(e.target.value)}
+                          onBlur={() => {
+                            const q = Number(editQuantityValue);
+                            if (q > 0) setExactQuantity(item.product.id, q);
+                            setEditingQuantity(null);
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              const q = Number(editQuantityValue);
+                              if (q > 0) setExactQuantity(item.product.id, q);
+                              setEditingQuantity(null);
+                            }
+                          }}
+                          autoFocus
+                        />
+                      ) : (
+                        <button
+                          onClick={() => { setEditingQuantity(item.product.id); setEditQuantityValue(String(item.quantity)); }}
+                          className="w-7 text-center text-xs font-semibold text-foreground hover:text-primary transition-colors"
+                          title="Tap to edit quantity"
+                        >
+                          {item.quantity}
+                        </button>
+                      )}
+                      <button onClick={() => updateQuantity(item.product.id, 1)} className="w-6 h-6 rounded glass flex items-center justify-center hover:bg-primary/10 transition-colors">
+                        <Plus className="w-3 h-3 text-foreground" />
+                      </button>
+                    </div>
+                    <p className="text-xs font-bold text-gold w-16 text-right">OMR {itemFinal.toFixed(3)}</p>
+                    <button onClick={() => removeFromCart(item.product.id)} className="text-destructive/60 hover:text-destructive transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {/* Item-level discount toggle */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setEditingItemDiscount(editingItemDiscount === item.product.id ? null : item.product.id)}
+                      className={cn('flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors',
+                        item.discount > 0 ? 'bg-success/20 text-success' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <Tag className="w-2.5 h-2.5" />
+                      {item.discount > 0 ? `${item.discount}% off` : 'Discount'}
+                    </button>
+                    {editingItemDiscount === item.product.id && (
+                      <input
+                        type="number"
+                        className="w-14 text-[10px] bg-transparent border border-input rounded px-1.5 py-0.5 text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                        placeholder="%"
+                        value={item.discount || ''}
+                        onChange={e => updateItemDiscount(item.product.id, Number(e.target.value))}
+                        min={0} max={100}
+                        autoFocus
+                      />
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })
           )}
         </div>
 
@@ -1019,6 +1195,15 @@ const POS = () => {
         </motion.div>
       )}
     </AnimatePresence>
+
+    {/* Quick Add Product Dialog */}
+    <QuickAddProduct
+      open={quickAddOpen}
+      onOpenChange={setQuickAddOpen}
+      prefillBarcode={quickAddBarcode}
+      prefillName={quickAddName}
+      onProductAdded={handleQuickProductAdded}
+    />
     </>
   );
 };
