@@ -11,6 +11,12 @@ import PageTransition from '@/components/animations/PageTransition';
 import ScrollReveal from '@/components/animations/ScrollReveal';
 import StaggerContainer, { StaggerItem } from '@/components/animations/StaggerContainer';
 import { motion } from 'framer-motion';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 
 const Products = () => {
   const { data: productsList = [], isLoading } = useProducts();
@@ -22,6 +28,51 @@ const Products = () => {
   const [imageGenProgress, setImageGenProgress] = useState({ done: 0, total: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: '', name_ar: '', barcode: '', sku: '', category: 'General',
+    cost: '', price: '', stock: '', min_stock: '5', unit: 'pcs',
+    supplier: '', is_weighted: false, expiry_date: '',
+  });
+
+  const resetForm = () => setForm({
+    name: '', name_ar: '', barcode: '', sku: '', category: 'General',
+    cost: '', price: '', stock: '', min_stock: '5', unit: 'pcs',
+    supplier: '', is_weighted: false, expiry_date: '',
+  });
+
+  const handleAddProduct = async () => {
+    if (!form.name.trim()) { toast.error('Product name is required'); return; }
+    if (!form.price || Number(form.price) <= 0) { toast.error('Valid price is required'); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('products').insert({
+        name: form.name.trim(),
+        name_ar: form.name_ar.trim() || null,
+        barcode: form.barcode.trim() || null,
+        sku: form.sku.trim() || null,
+        category: form.category,
+        cost: Number(form.cost) || 0,
+        price: Number(form.price),
+        stock: Number(form.stock) || 0,
+        min_stock: Number(form.min_stock) || 5,
+        unit: form.unit,
+        supplier: form.supplier.trim() || null,
+        is_weighted: form.is_weighted,
+        expiry_date: form.expiry_date || null,
+      });
+      if (error) throw error;
+      toast.success('Product added!');
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setAddOpen(false);
+      resetForm();
+    } catch (err: any) {
+      toast.error('Failed: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Generate AI images for products that don't have one
   const generateProductImages = useCallback(async () => {
@@ -204,9 +255,102 @@ const Products = () => {
                 {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 {importing ? 'Importing...' : 'Import'}
               </button>
-              <button onClick={() => toast.info('Add product form coming soon')} className="flex items-center gap-2 px-4 py-2 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
-                <Plus className="w-4 h-4" /> Add Product
-              </button>
+              <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) resetForm(); }}>
+                <DialogTrigger asChild>
+                  <button className="flex items-center gap-2 px-4 py-2 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
+                    <Plus className="w-4 h-4" /> Add Product
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Add New Product</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-2">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="name">Name *</Label>
+                        <Input id="name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Product name" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="name_ar">Name (Arabic)</Label>
+                        <Input id="name_ar" dir="rtl" value={form.name_ar} onChange={e => setForm(f => ({ ...f, name_ar: e.target.value }))} placeholder="الاسم بالعربي" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="barcode">Barcode</Label>
+                        <Input id="barcode" value={form.barcode} onChange={e => setForm(f => ({ ...f, barcode: e.target.value }))} placeholder="e.g. 6291234567890" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="sku">SKU</Label>
+                        <Input id="sku" value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} placeholder="e.g. MILK-001" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Category</Label>
+                        <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {categories.filter(c => c !== 'All Items').map(c => (
+                              <SelectItem key={c} value={c}>{c}</SelectItem>
+                            ))}
+                            <SelectItem value="General">General</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="supplier">Supplier</Label>
+                        <Input id="supplier" value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} placeholder="Supplier name" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="cost">Cost (OMR)</Label>
+                        <Input id="cost" type="number" step="0.001" value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} placeholder="0.000" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="price">Price (OMR) *</Label>
+                        <Input id="price" type="number" step="0.001" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.000" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="stock">Stock</Label>
+                        <Input id="stock" type="number" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))} placeholder="0" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="min_stock">Min Stock</Label>
+                        <Input id="min_stock" type="number" value={form.min_stock} onChange={e => setForm(f => ({ ...f, min_stock: e.target.value }))} placeholder="5" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Unit</Label>
+                        <Select value={form.unit} onValueChange={v => setForm(f => ({ ...f, unit: v }))}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pcs">pcs</SelectItem>
+                            <SelectItem value="kg">kg</SelectItem>
+                            <SelectItem value="ltr">ltr</SelectItem>
+                            <SelectItem value="box">box</SelectItem>
+                            <SelectItem value="pack">pack</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="expiry">Expiry Date</Label>
+                        <Input id="expiry" type="date" value={form.expiry_date} onChange={e => setForm(f => ({ ...f, expiry_date: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Switch checked={form.is_weighted} onCheckedChange={v => setForm(f => ({ ...f, is_weighted: v }))} />
+                      <Label>Weighted item (sold by KG)</Label>
+                    </div>
+                    <Button onClick={handleAddProduct} disabled={saving} className="w-full">
+                      {saving ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Saving...</> : 'Add Product'}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
         </ScrollReveal>
