@@ -29,6 +29,8 @@ const Products = () => {
   const fileRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: '', name_ar: '', barcode: '', sku: '', category: 'General',
@@ -66,6 +68,60 @@ const Products = () => {
       toast.success('Product added!');
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setAddOpen(false);
+      resetForm();
+    } catch (err: any) {
+      toast.error('Failed: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openEditDialog = (product: any) => {
+    setEditingProduct(product);
+    setForm({
+      name: product.name || '',
+      name_ar: product.name_ar || '',
+      barcode: product.barcode || '',
+      sku: product.sku || '',
+      category: product.category || 'General',
+      cost: String(product.cost || ''),
+      price: String(product.price || ''),
+      stock: String(product.stock || ''),
+      min_stock: String(product.min_stock || '5'),
+      unit: product.unit || 'pcs',
+      supplier: product.supplier || '',
+      is_weighted: product.is_weighted || false,
+      expiry_date: product.expiry_date || '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditProduct = async () => {
+    if (!editingProduct) return;
+    if (!form.name.trim()) { toast.error('Product name is required'); return; }
+    if (!form.price || Number(form.price) <= 0) { toast.error('Valid price is required'); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('products').update({
+        name: form.name.trim(),
+        name_ar: form.name_ar.trim() || null,
+        barcode: form.barcode.trim() || null,
+        sku: form.sku.trim() || null,
+        category: form.category,
+        cost: Number(form.cost) || 0,
+        price: Number(form.price),
+        stock: Number(form.stock) || 0,
+        min_stock: Number(form.min_stock) || 5,
+        unit: form.unit,
+        supplier: form.supplier.trim() || null,
+        is_weighted: form.is_weighted,
+        expiry_date: form.expiry_date || null,
+      }).eq('id', editingProduct.id);
+      if (error) throw error;
+      toast.success('Product updated!');
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setEditOpen(false);
+      setEditingProduct(null);
       resetForm();
     } catch (err: any) {
       toast.error('Failed: ' + err.message);
@@ -450,7 +506,7 @@ const Products = () => {
                         </td>
                         <td className="p-4">
                           <div className="flex items-center justify-center gap-2">
-                            <button className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground">
+                            <button onClick={() => openEditDialog(product)} className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground">
                               <Edit className="w-4 h-4" />
                             </button>
                             <button className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive">
@@ -473,7 +529,100 @@ const Products = () => {
               <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">No products found</div>
             )}
           </div>
-        </ScrollReveal>
+       </ScrollReveal>
+
+        {/* Edit Product Dialog */}
+        <Dialog open={editOpen} onOpenChange={(o) => { setEditOpen(o); if (!o) { setEditingProduct(null); resetForm(); } }}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Product</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-name">Name *</Label>
+                  <Input id="edit-name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Product name" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-name_ar">Name (Arabic)</Label>
+                  <Input id="edit-name_ar" dir="rtl" value={form.name_ar} onChange={e => setForm(f => ({ ...f, name_ar: e.target.value }))} placeholder="الاسم بالعربي" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-barcode">Barcode</Label>
+                  <Input id="edit-barcode" value={form.barcode} onChange={e => setForm(f => ({ ...f, barcode: e.target.value }))} placeholder="e.g. 6291234567890" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-sku">SKU</Label>
+                  <Input id="edit-sku" value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} placeholder="e.g. MILK-001" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Category</Label>
+                  <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {categories.filter(c => c !== 'All Items').map(c => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                      {!categories.includes('General') && <SelectItem value="General">General</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-supplier">Supplier</Label>
+                  <Input id="edit-supplier" value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} placeholder="Supplier name" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-cost">Cost (OMR)</Label>
+                  <Input id="edit-cost" type="number" step="0.001" value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} placeholder="0.000" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-price">Price (OMR) *</Label>
+                  <Input id="edit-price" type="number" step="0.001" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.000" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-stock">Stock</Label>
+                  <Input id="edit-stock" type="number" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))} placeholder="0" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-min_stock">Min Stock</Label>
+                  <Input id="edit-min_stock" type="number" value={form.min_stock} onChange={e => setForm(f => ({ ...f, min_stock: e.target.value }))} placeholder="5" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Unit</Label>
+                  <Select value={form.unit} onValueChange={v => setForm(f => ({ ...f, unit: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pcs">pcs</SelectItem>
+                      <SelectItem value="kg">kg</SelectItem>
+                      <SelectItem value="ltr">ltr</SelectItem>
+                      <SelectItem value="box">box</SelectItem>
+                      <SelectItem value="pack">pack</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-expiry">Expiry Date</Label>
+                  <Input id="edit-expiry" type="date" value={form.expiry_date} onChange={e => setForm(f => ({ ...f, expiry_date: e.target.value }))} />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch checked={form.is_weighted} onCheckedChange={v => setForm(f => ({ ...f, is_weighted: v }))} />
+                <Label>Weighted item (sold by KG)</Label>
+              </div>
+              <Button onClick={handleEditProduct} disabled={saving} className="w-full">
+                {saving ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Saving...</> : 'Update Product'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </PageTransition>
   );
