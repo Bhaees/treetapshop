@@ -295,7 +295,7 @@ const Products = () => {
                             {categories.filter(c => c !== 'All Items').map(c => (
                               <SelectItem key={c} value={c}>{c}</SelectItem>
                             ))}
-                            <SelectItem value="General">General</SelectItem>
+                            {!categories.includes('General') && <SelectItem value="General">General</SelectItem>}
                           </SelectContent>
                         </Select>
                       </div>
