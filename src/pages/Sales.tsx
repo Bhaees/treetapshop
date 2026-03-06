@@ -6,11 +6,16 @@ import { toast } from 'sonner';
 import PageTransition from '@/components/animations/PageTransition';
 import ScrollReveal from '@/components/animations/ScrollReveal';
 import { motion } from 'framer-motion';
+import InvoiceDetail from '@/components/sales/InvoiceDetail';
+import RefundDialog from '@/components/sales/RefundDialog';
 
 const Sales = () => {
   const { data: salesList = [], isLoading } = useTransactions();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedSale, setSelectedSale] = useState<any>(null);
+  const [showInvoice, setShowInvoice] = useState(false);
+  const [showRefund, setShowRefund] = useState(false);
 
   const filtered = salesList.filter(s => {
     const matchSearch = s.invoice_no.toLowerCase().includes(searchQuery.toLowerCase()) || s.customer_name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -19,6 +24,17 @@ const Sales = () => {
   });
 
   const totalRevenue = salesList.filter(s => s.status === 'paid').reduce((sum, s) => sum + Number(s.total), 0);
+  const totalRefunds = salesList.filter(s => s.status === 'refunded' || s.status === 'partially_refunded').reduce((sum, s) => sum + Number(s.total), 0);
+
+  const handleViewInvoice = (sale: any) => {
+    setSelectedSale(sale);
+    setShowInvoice(true);
+  };
+
+  const handleRefund = (sale: any) => {
+    setSelectedSale(sale);
+    setShowRefund(true);
+  };
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-64"><p className="text-sm text-muted-foreground">Loading sales...</p></div>;
@@ -33,7 +49,10 @@ const Sales = () => {
               <h1 className="text-2xl font-bold font-heading text-foreground">
                 <span className="text-primary text-glow">Sales</span> History
               </h1>
-              <p className="text-sm text-muted-foreground">{salesList.length} transactions · Revenue: OMR {totalRevenue.toFixed(3)}</p>
+              <p className="text-sm text-muted-foreground">
+                {salesList.length} transactions · Revenue: OMR {totalRevenue.toFixed(3)}
+                {totalRefunds > 0 && <span className="text-destructive ml-2">· Refunds: OMR {totalRefunds.toFixed(3)}</span>}
+              </p>
             </div>
             <button className="flex items-center gap-2 px-4 py-2 rounded-lg glass text-sm font-medium text-foreground hover:bg-muted/30 transition-colors">
               <Download className="w-4 h-4" /> Export
@@ -54,7 +73,7 @@ const Sales = () => {
               />
             </div>
             <div className="flex gap-2">
-              {['all', 'paid', 'credit', 'refunded'].map(status => (
+              {['all', 'paid', 'credit', 'refunded', 'partially_refunded'].map(status => (
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
@@ -63,7 +82,7 @@ const Sales = () => {
                     statusFilter === status ? 'gradient-cyan text-primary-foreground glow-cyan' : 'glass text-secondary-foreground hover:text-foreground'
                   )}
                 >
-                  {status}
+                  {status === 'partially_refunded' ? 'Partial' : status}
                 </button>
               ))}
             </div>
@@ -79,6 +98,7 @@ const Sales = () => {
                     <th className="text-left p-4 font-medium text-muted-foreground">Invoice</th>
                     <th className="text-left p-4 font-medium text-muted-foreground">Customer</th>
                     <th className="text-left p-4 font-medium text-muted-foreground">Date</th>
+                    <th className="text-left p-4 font-medium text-muted-foreground">Cashier</th>
                     <th className="text-right p-4 font-medium text-muted-foreground">Items</th>
                     <th className="text-right p-4 font-medium text-muted-foreground">Total</th>
                     <th className="text-center p-4 font-medium text-muted-foreground">Payment</th>
@@ -96,11 +116,13 @@ const Sales = () => {
                         initial={{ opacity: 0, x: -16 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ duration: 0.3, delay: Math.min(idx * 0.02, 0.5), ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-                        className="border-b border-border/30 hover:bg-muted/10 transition-colors"
+                        className="border-b border-border/30 hover:bg-muted/10 transition-colors cursor-pointer"
+                        onClick={() => handleViewInvoice(sale)}
                       >
                         <td className="p-4 font-medium text-primary">{sale.invoice_no}</td>
                         <td className="p-4 text-foreground">{sale.customer_name}</td>
                         <td className="p-4 text-muted-foreground">{new Date(sale.created_at).toLocaleDateString()}</td>
+                        <td className="p-4 text-muted-foreground">{sale.cashier || '—'}</td>
                         <td className="p-4 text-right text-muted-foreground">{itemCount}</td>
                         <td className="p-4 text-right font-semibold text-foreground">OMR {Number(sale.total).toFixed(3)}</td>
                         <td className="p-4 text-center"><span className="px-2 py-1 rounded-full glass text-xs capitalize">{sale.payment_type}</span></td>
@@ -108,18 +130,19 @@ const Sales = () => {
                           <span className={cn('px-2 py-1 rounded-full text-xs font-medium',
                             sale.status === 'paid' && 'bg-success/20 text-success',
                             sale.status === 'refunded' && 'bg-destructive/20 text-destructive',
+                            sale.status === 'partially_refunded' && 'bg-warning/20 text-warning',
                             sale.status === 'credit' && 'bg-warning/20 text-warning',
                           )}>
                             {sale.status}
                           </span>
                         </td>
                         <td className="p-4">
-                          <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => toast.info('Invoice preview coming soon')} className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground">
+                          <div className="flex items-center justify-center gap-2" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => handleViewInvoice(sale)} className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground" title="View Invoice">
                               <Eye className="w-4 h-4" />
                             </button>
-                            {sale.status === 'paid' && (
-                              <button onClick={() => toast.info('Refund flow coming soon')} className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive">
+                            {(sale.status === 'paid' || sale.status === 'credit') && (
+                              <button onClick={() => handleRefund(sale)} className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive" title="Process Refund">
                                 <RotateCcw className="w-4 h-4" />
                               </button>
                             )}
@@ -136,6 +159,12 @@ const Sales = () => {
             )}
           </div>
         </ScrollReveal>
+
+        {/* Invoice Detail Dialog */}
+        <InvoiceDetail open={showInvoice} onOpenChange={setShowInvoice} sale={selectedSale} />
+
+        {/* Refund Dialog */}
+        <RefundDialog open={showRefund} onOpenChange={setShowRefund} sale={selectedSale} />
       </div>
     </PageTransition>
   );

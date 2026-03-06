@@ -1,15 +1,83 @@
 import { useState } from 'react';
-import { Search, Plus, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen, MessageCircle } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen, MessageCircle, Save, X } from 'lucide-react';
 import { useCustomers } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
 import PageTransition from '@/components/animations/PageTransition';
 import ScrollReveal from '@/components/animations/ScrollReveal';
 import StaggerContainer, { StaggerItem } from '@/components/animations/StaggerContainer';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 
 const Customers = () => {
   const { data: customersList = [], isLoading } = useCustomers();
   const [searchQuery, setSearchQuery] = useState('');
+  const queryClient = useQueryClient();
+
+  // CRUD state
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: '', phone: '', email: '', address: '' });
+
+  const resetForm = () => { setForm({ name: '', phone: '', email: '', address: '' }); setEditingCustomer(null); };
+
+  const openAdd = () => { resetForm(); setFormOpen(true); };
+  const openEdit = (c: any) => {
+    setEditingCustomer(c);
+    setForm({ name: c.name, phone: c.phone || '', email: c.email || '', address: c.address || '' });
+    setFormOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast.error('Name is required'); return; }
+    setSaving(true);
+    try {
+      if (editingCustomer) {
+        const { error } = await supabase.from('customers').update({
+          name: form.name.trim(),
+          phone: form.phone.trim() || null,
+          email: form.email.trim() || null,
+          address: form.address.trim() || null,
+        }).eq('id', editingCustomer.id);
+        if (error) throw error;
+        toast.success(`${form.name} updated`);
+      } else {
+        const { error } = await supabase.from('customers').insert({
+          name: form.name.trim(),
+          phone: form.phone.trim() || null,
+          email: form.email.trim() || null,
+          address: form.address.trim() || null,
+        });
+        if (error) throw error;
+        toast.success(`${form.name} added`);
+      }
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      setFormOpen(false);
+      resetForm();
+    } catch (err: any) {
+      toast.error('Failed: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase.from('customers').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Customer deleted');
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+    } catch (err: any) {
+      toast.error('Failed: ' + err.message);
+    }
+    setDeleteConfirm(null);
+  };
 
   const filtered = customersList.filter(c =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) || (c.phone && c.phone.includes(searchQuery))
@@ -32,7 +100,7 @@ const Customers = () => {
               </h1>
               <p className="text-sm text-muted-foreground">{customersList.length} customers · Outstanding: OMR {totalBalance.toFixed(3)}</p>
             </div>
-            <button onClick={() => toast.info('Add customer form coming soon')} className="flex items-center gap-2 px-4 py-2 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
+            <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2 rounded-lg gradient-cyan text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity glow-cyan">
               <Plus className="w-4 h-4" /> Add Customer
             </button>
           </div>
@@ -64,8 +132,15 @@ const Customers = () => {
                       </div>
                     </div>
                     <div className="flex gap-1">
-                      <button className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground"><Edit className="w-4 h-4" /></button>
-                      <button className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => openEdit(customer)} className="p-1.5 rounded-lg hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground"><Edit className="w-4 h-4" /></button>
+                      {deleteConfirm === customer.id ? (
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => handleDelete(customer.id)} className="px-2 py-1 rounded bg-destructive text-destructive-foreground text-[10px] font-bold">Yes</button>
+                          <button onClick={() => setDeleteConfirm(null)} className="px-2 py-1 rounded glass text-[10px]">No</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setDeleteConfirm(customer.id)} className="p-1.5 rounded-lg hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
+                      )}
                     </div>
                   </div>
                   <div className="space-y-1.5 text-xs text-muted-foreground">
@@ -124,6 +199,36 @@ const Customers = () => {
         {filtered.length === 0 && (
           <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">No customers found</div>
         )}
+
+        {/* Add/Edit Customer Dialog */}
+        <Dialog open={formOpen} onOpenChange={(o) => { setFormOpen(o); if (!o) resetForm(); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{editingCustomer ? 'Edit Customer' : 'Add Customer'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>Name *</Label>
+                <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Customer name" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Phone</Label>
+                <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+968 XXXX XXXX" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email</Label>
+                <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@example.com" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Address</Label>
+                <Input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Address" />
+              </div>
+              <Button onClick={handleSave} disabled={saving} className="w-full">
+                {saving ? 'Saving...' : editingCustomer ? 'Update Customer' : 'Add Customer'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </PageTransition>
   );
