@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle, Scale, Crown, PauseCircle, Play, Tag, SplitSquareHorizontal, Receipt } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle, Scale, Crown, PauseCircle, Play, Tag, SplitSquareHorizontal, Receipt, RotateCcw } from 'lucide-react';
 import Fuse from 'fuse.js';
 import { useProducts, useCustomers, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,7 @@ import QuickAddProduct from '@/components/pos/QuickAddProduct';
 import HeldSalesPanel, { type HeldSale } from '@/components/pos/HeldSales';
 import ReceiptPreview, { type ReceiptData } from '@/components/pos/ReceiptPreview';
 import SplitPayment, { type PaymentSplit } from '@/components/pos/SplitPayment';
+import ReturnMode from '@/components/pos/ReturnMode';
 import { supabase } from '@/integrations/supabase/client';
 import vaultVideo from '@/assets/vault-opening.mp4';
 import logoIcon from '@/assets/logo-icon.png';
@@ -109,6 +110,9 @@ const POS = () => {
 
   // Split payment state
   const [showSplitPayment, setShowSplitPayment] = useState(false);
+
+  // Return mode state
+  const [showReturnMode, setShowReturnMode] = useState(false);
 
   // Long-press logo handler for admin quick-toggle
   const handleLogoTouchStart = useCallback(() => {
@@ -839,6 +843,13 @@ const POS = () => {
               <button onClick={printReceipt} className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" title="Print Receipt (Epson TM-T88VII)">
                 <Printer className="w-4 h-4" />
               </button>
+              <button
+                onClick={() => setShowReturnMode(true)}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                title="Return / Refund Mode"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
               <button 
                 onClick={() => setShowKhat(!showKhat)}
                 className={cn('p-1.5 rounded-lg transition-colors', showKhat ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground')}
@@ -1256,6 +1267,17 @@ const POS = () => {
 
     {/* Split Payment */}
     <SplitPayment open={showSplitPayment} onOpenChange={setShowSplitPayment} total={total} onConfirm={handleSplitPaymentConfirm} />
+
+    {/* Return/Refund Mode */}
+    <AnimatePresence>
+      {showReturnMode && (
+        <ReturnMode
+          open={showReturnMode}
+          onClose={() => setShowReturnMode(false)}
+          cashierName={staffSession?.name || 'Admin'}
+        />
+      )}
+    </AnimatePresence>
     </>
   );
 };
