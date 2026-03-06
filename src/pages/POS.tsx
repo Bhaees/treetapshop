@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle, Scale, Crown, PauseCircle, Play, Tag } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone, User, Percent, Package, ShoppingCart, BookOpen, Printer, DoorOpen, Wifi, WifiOff, HardDrive, LogOut, ShieldAlert, AlertTriangle, Scale, Crown, PauseCircle, Play, Tag, SplitSquareHorizontal, Receipt } from 'lucide-react';
 import Fuse from 'fuse.js';
 import { useProducts, useCustomers, useCategories } from '@/hooks/useSupabaseData';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,8 @@ import CameraScanner from '@/components/pos/CameraScanner';
 import ProductGrid from '@/components/pos/ProductGrid';
 import QuickAddProduct from '@/components/pos/QuickAddProduct';
 import HeldSalesPanel, { type HeldSale } from '@/components/pos/HeldSales';
+import ReceiptPreview, { type ReceiptData } from '@/components/pos/ReceiptPreview';
+import SplitPayment, { type PaymentSplit } from '@/components/pos/SplitPayment';
 import { supabase } from '@/integrations/supabase/client';
 import vaultVideo from '@/assets/vault-opening.mp4';
 import logoIcon from '@/assets/logo-icon.png';
@@ -100,6 +102,13 @@ const POS = () => {
   // Quantity tap-to-edit
   const [editingQuantity, setEditingQuantity] = useState<string | null>(null);
   const [editQuantityValue, setEditQuantityValue] = useState('');
+
+  // Receipt preview state
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
+
+  // Split payment state
+  const [showSplitPayment, setShowSplitPayment] = useState(false);
 
   // Long-press logo handler for admin quick-toggle
   const handleLogoTouchStart = useCallback(() => {
@@ -506,6 +515,27 @@ const POS = () => {
     const invoiceNo = `INV-${Date.now().toString(36).toUpperCase()}`;
     setLastInvoice(invoiceNo);
 
+    // Build receipt data
+    const receipt: ReceiptData = {
+      invoiceNo,
+      date: new Date().toLocaleString(),
+      cashier: staffSession?.name || 'Admin',
+      customer: selectedCustomer,
+      items: cart.map(i => ({
+        name: i.product.name,
+        quantity: i.quantity,
+        price: i.product.price,
+        discount: i.discount,
+        total: (i.product.price * i.quantity) * (1 - i.discount / 100),
+      })),
+      subtotal,
+      discount: discountAmount,
+      vat: taxAmount,
+      total,
+      paymentMethod: method,
+    };
+    setReceiptData(receipt);
+
     // Save to IndexedDB (offline-first) — will sync to Supabase
     await saveOfflineTransaction({
       id: invoiceNo,
@@ -542,8 +572,17 @@ const POS = () => {
       });
     }
     
+    // Show receipt preview instead of just QR
+    setShowReceipt(true);
     setShowQR(true);
-    setTimeout(() => { clearCart(); setShowQR(false); }, 4000);
+    setTimeout(() => { clearCart(); setShowQR(false); }, 6000);
+  };
+
+  // Handle split payment confirmation
+  const handleSplitPaymentConfirm = (splits: PaymentSplit[]) => {
+    setShowSplitPayment(false);
+    const methodSummary = splits.map(s => `${s.method}: OMR ${s.amount.toFixed(3)}`).join(' + ');
+    executeCheckout(`Split (${methodSummary})`);
   };
 
   // Khat customers — those with debt
@@ -1022,6 +1061,13 @@ const POS = () => {
                 <BookOpen className="w-4 h-4" /> Credit
               </button>
             </div>
+            {/* Split Payment */}
+            <button
+              onClick={() => setShowSplitPayment(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg glass border border-input text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/50 transition-all"
+            >
+              <SplitSquareHorizontal className="w-4 h-4" /> Split Payment
+            </button>
           </div>
         )}
       </div>
@@ -1204,6 +1250,12 @@ const POS = () => {
       prefillName={quickAddName}
       onProductAdded={handleQuickProductAdded}
     />
+
+    {/* Receipt Preview */}
+    <ReceiptPreview open={showReceipt} onOpenChange={setShowReceipt} receipt={receiptData} />
+
+    {/* Split Payment */}
+    <SplitPayment open={showSplitPayment} onOpenChange={setShowSplitPayment} total={total} onConfirm={handleSplitPaymentConfirm} />
     </>
   );
 };
